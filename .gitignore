@@ -1,0 +1,207 @@
+# ============================================================
+# LoreGuard - Git Ignore
+# ============================================================
+
+# ------------------------------------------------------------
+# Environment / secrets
+# ------------------------------------------------------------
+
+.env
+.env.*
+!.env.example
+
+*.secret
+*.key
+*.pem
+
+# ------------------------------------------------------------
+# Python
+# ------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ------------------------------------------------------------
+# FastAPI / application data
+# ------------------------------------------------------------
+
+*.log
+logs/
+
+# Local application data
+data/
+storage/
+tmp/
+temp/
+
+# Uploaded / generated files
+uploads/
+generated/
+
+# ------------------------------------------------------------
+# Node / Vue / Vite
+# ------------------------------------------------------------
+
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+.yarn-cache/
+
+# Build output
+dist/
+.vite/
+
+# Vite cache
+.vite/
+
+# Coverage
+coverage/
+
+# ------------------------------------------------------------
+# Vue / TypeScript
+# ------------------------------------------------------------
+
+*.tsbuildinfo
+
+# ------------------------------------------------------------
+# IDE / Editors
+# ------------------------------------------------------------
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio
+.vs/
+
+# ------------------------------------------------------------
+# Operating system
+# ------------------------------------------------------------
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ------------------------------------------------------------
+# Docker
+# ------------------------------------------------------------
+
+docker-compose.override.yml
+
+# ------------------------------------------------------------
+# PostgreSQL
+# ------------------------------------------------------------
+
+*.sql.gz
+*.dump
+*.backup
+
+# ------------------------------------------------------------
+# Testing
+# ------------------------------------------------------------
+
+.pytest_cache/
+.tox/
+.nox/
+
+# ------------------------------------------------------------
+# Local LoreGuard / Obsidian data
+# ------------------------------------------------------------
+
+# Never commit a real world/fantasy vault into the application repo
+vault/
+obsidian-vault/
+
+# Local indexing/cache files
+.index/
+.cache/
+
+# Vector database / embeddings generated locally
+embeddings/
+vector_store/
+
+# ------------------------------------------------------------
+# AI / LLM
+# ------------------------------------------------------------
+
+# Local model files
+models/
+*.gguf
+*.safetensors
+*.bin
+
+# Prompt / response dumps generated during development
+llm_cache/
+llm_logs/
+
+# ------------------------------------------------------------
+# OS / miscellaneous
+# ------------------------------------------------------------
+
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Crash dumps
+*.dmp
