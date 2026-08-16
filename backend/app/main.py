@@ -3,7 +3,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import engine
-
+from app.services.vault_scanner import VaultScanner
 
 app = FastAPI(
     title=settings.app_name,
@@ -36,4 +36,18 @@ def database_health_check():
     return {
         "database": "connected",
         "result": result.scalar(),
+    }
+
+@app.get("/api/vault/scan")
+def scan_vault():
+    scanner = VaultScanner()
+
+    files = scanner.scan_markdown_files()
+
+    return {
+        "files_found": len(files),
+        "files": [
+            str(file.relative_to(scanner.vault_path))
+            for file in files
+        ],
     }

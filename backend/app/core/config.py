@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     database_user: str = "loreguard"
     database_password: str
 
+    obsidian_vault_path: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
