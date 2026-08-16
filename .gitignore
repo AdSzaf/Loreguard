@@ -185,7 +185,7 @@ vector_store/
 # ------------------------------------------------------------
 
 # Local model files
-models/
+local_models/
 *.gguf
 *.safetensors
 *.bin
