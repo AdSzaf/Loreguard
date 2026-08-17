@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -33,6 +33,11 @@ class Document(Base):
     content_hash: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
+    )
+
+    entities: Mapped[list["Entity"]] = relationship(
+        secondary="document_entities",
+        back_populates="documents",
     )
 
     file_modified_at: Mapped[datetime] = mapped_column(
