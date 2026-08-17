@@ -3,6 +3,7 @@ from pathlib import Path
 
 import frontmatter
 
+from datetime import datetime
 from app.schemas.document import ParsedDocument
 
 
@@ -24,6 +25,9 @@ class MarkdownParser:
             path=str(relative_path),
             content=content,
             content_hash=self._calculate_hash(content),
+            file_modified_at=datetime.fromtimestamp(
+                file_path.stat().st_mtime
+            ),
             frontmatter=post.metadata,
         )
 

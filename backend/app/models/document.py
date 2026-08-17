@@ -35,6 +35,11 @@ class Document(Base):
         nullable=False,
     )
 
+    file_modified_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
