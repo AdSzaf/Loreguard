@@ -1,4 +1,6 @@
+from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.vault_schema import VaultSchema
 from app.models.document import Document
 from app.services.entity_indexer import EntityIndexer
 
@@ -7,7 +9,8 @@ def main():
     db = SessionLocal()
 
     try:
-        indexer = EntityIndexer(db)
+        schema = VaultSchema(settings.obsidian_vault_path)
+        indexer = EntityIndexer(db, schema)
 
         print("=" * 60)
         print("INDEXING ENTITIES")

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
+from app.core.vault_schema import VaultSchema
 from app.models import Event
 from app.services.document_service import DocumentService
 from app.services.entity_indexer import EntityIndexer
@@ -82,11 +83,12 @@ def sync_vault(
 
     scanner = VaultScanner()
     parser = MarkdownParser()
+    schema = VaultSchema(scanner.vault_path)
 
     document_service = DocumentService(db)
-    entity_indexer = EntityIndexer(db)
+    entity_indexer = EntityIndexer(db, schema)
     fact_extractor = FactExtractor(db)
-    event_extractor = EventExtractor(db)
+    event_extractor = EventExtractor(db, schema)
 
     files = scanner.scan_markdown_files()
 
@@ -106,7 +108,10 @@ def sync_vault(
         })
 
     for entry in synced:
-        entity_indexer.index_document(entry["document"])
+        entity_indexer.index_document(
+            entry["document"],
+            entry["parsed"].frontmatter,
+        )
 
     db.commit()
 

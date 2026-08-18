@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.vault_schema import VaultSchema
 from app.models.document import Document
 from app.services.entity_extractor import EntityExtractor
 from app.services.entity_resolver import EntityResolver
@@ -13,7 +14,7 @@ class EntityIndexer:
 
         Document
             ↓
-        EntityExtractor
+        EntityExtractor (wikilinks in content)
             ↓
         EntityCandidate
             ↓
@@ -22,19 +23,38 @@ class EntityIndexer:
         Entity
             ↓
         Document ↔ Entity
+
+    Also ensures every document has its own "subject" entity
+    (keyed by title), regardless of whether anything else in the
+    vault links to it yet -- see EntityResolver.resolve_subject.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, schema: VaultSchema):
         self.db = db
+        self.schema = schema
         self.extractor = EntityExtractor()
-        self.resolver = EntityResolver(db)
+        self.resolver = EntityResolver(db, schema)
 
-    def index_document(self, document: Document) -> int:
+    def index_document(
+        self,
+        document: Document,
+        frontmatter: dict | None = None,
+    ) -> int:
         """
-        Extract and resolve entities referenced by a document.
+        Extract and resolve entities referenced by a document, and
+        ensure the document's own subject entity exists.
 
-        Returns the number of unique entity references found.
+        Returns the number of unique entity references found in
+        the document's content (not counting the subject entity).
         """
+
+        subject = self.resolver.resolve_subject(
+            document,
+            frontmatter or {},
+        )
+
+        if subject not in document.entities:
+            document.entities.append(subject)
 
         if not document.content:
             return 0

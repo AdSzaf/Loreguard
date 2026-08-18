@@ -1,7 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Entity, EntityAlias, EntityType
+from app.core.vault_schema import VaultSchema
+from app.models import Document, Entity, EntityAlias, EntityType
 from app.services.entity_extractor import EntityCandidate
 
 
@@ -18,8 +19,9 @@ class EntityResolver:
     as an alias of the resolved entity.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, schema: VaultSchema):
         self.db = db
+        self.schema = schema
 
     def resolve(self, candidate: EntityCandidate) -> Entity:
         entity = self._find_by_name(candidate.name)
@@ -39,6 +41,44 @@ class EntityResolver:
                 entity,
                 candidate.display_name,
             )
+
+        return entity
+
+    def resolve_subject(
+        self,
+        document: Document,
+        frontmatter: dict,
+    ) -> Entity:
+        """
+        Finds or creates the Entity that a document is *about*
+        (its own canonical entity, keyed by document title) and
+        keeps its entity_type in sync with the document's `tags`.
+
+        Unlike `resolve()`, this never leaves an entity uncreated:
+        every document gets a subject entity on first sync, even if
+        nothing else in the vault links to it yet. Without this,
+        facts/events extracted from an unlinked note's frontmatter
+        would have nowhere to attach.
+        """
+
+        entity = self._find_by_name(document.title)
+
+        if entity is None:
+            entity = self._find_by_alias(document.title)
+
+        resolved_type = self.schema.resolve_entity_type(
+            frontmatter.get("tags")
+        )
+
+        if entity is None:
+            entity = Entity(
+                name=document.title,
+                entity_type=resolved_type or EntityType.OTHER,
+            )
+            self.db.add(entity)
+            self.db.flush()
+        elif resolved_type is not None and entity.entity_type != resolved_type:
+            entity.entity_type = resolved_type
 
         return entity
 
