@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
 from app.core.vault_schema import VaultSchema
-from app.models import Conflict, ConflictStatus, Event
+from app.models import Conflict, ConflictStatus, Document, Entity, Event, Fact
 from app.services.consistency_engine import ConsistencyEngine
 from app.services.document_service import DocumentService
 from app.services.entity_indexer import EntityIndexer
@@ -143,7 +143,7 @@ def sync_vault(
 
     db.commit()
 
-    consistency_engine = ConsistencyEngine(db)
+    consistency_engine = ConsistencyEngine(db, schema=schema)
     conflict_summary = consistency_engine.run()
     db.commit()
 
@@ -261,4 +261,191 @@ def resolve_conflict(
         "id": conflict.id,
         "status": conflict.status,
         "resolution_note": conflict.resolution_note,
+    }
+
+
+@app.get("/api/documents")
+def list_documents(
+    db: Session = Depends(get_db),
+):
+    documents = db.scalars(select(Document)).all()
+
+    return [
+        {
+            "id": document.id,
+            "title": document.title,
+            "path": document.path,
+            "indexed_at": document.indexed_at,
+            "file_modified_at": document.file_modified_at,
+            "entities_linked": len(document.entities),
+        }
+        for document in documents
+    ]
+
+
+@app.get("/api/entities")
+def list_entities(
+    entity_type: str | None = None,
+    db: Session = Depends(get_db),
+):
+    query = select(Entity)
+
+    if entity_type:
+        query = query.where(Entity.entity_type == entity_type)
+
+    entities = db.scalars(query).all()
+
+    return [
+        {
+            "id": entity.id,
+            "name": entity.name,
+            "entity_type": entity.entity_type,
+            "aliases": [alias.alias for alias in entity.aliases],
+            "documents": len(entity.documents),
+        }
+        for entity in entities
+    ]
+
+
+@app.get("/api/entities/{entity_id}")
+def get_entity(
+    entity_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Full detail for one entity: its facts, the events it
+    participates in, and any open conflicts about it -- the data
+    behind a future EntityDetail / "Why?" view (plan section 32).
+    """
+
+    entity = db.get(Entity, entity_id)
+
+    if entity is None:
+        return {"error": "Entity not found"}
+
+    facts_as_subject = db.scalars(
+        select(Fact).where(Fact.subject_entity_id == entity_id)
+    ).all()
+
+    conflicts = db.scalars(
+        select(Conflict).where(Conflict.entity_id == entity_id)
+    ).all()
+
+    return {
+        "id": entity.id,
+        "name": entity.name,
+        "entity_type": entity.entity_type,
+        "aliases": [alias.alias for alias in entity.aliases],
+        "facts": [
+            {
+                "id": fact.id,
+                "predicate": fact.predicate,
+                "value": (
+                    fact.object_entity.name
+                    if fact.object_entity_id is not None
+                    and fact.object_entity
+                    else fact.object_value
+                ),
+                "source_document": fact.document.title,
+            }
+            for fact in facts_as_subject
+        ],
+        "conflicts": [
+            {
+                "id": conflict.id,
+                "rule_name": conflict.rule_name,
+                "status": conflict.status,
+                "explanation": conflict.explanation,
+            }
+            for conflict in conflicts
+        ],
+    }
+
+
+@app.get("/api/facts")
+def list_facts(
+    entity_id: int | None = None,
+    predicate: str | None = None,
+    db: Session = Depends(get_db),
+):
+    query = select(Fact)
+
+    if entity_id is not None:
+        query = query.where(Fact.subject_entity_id == entity_id)
+
+    if predicate is not None:
+        query = query.where(Fact.predicate.ilike(predicate))
+
+    facts = db.scalars(query).all()
+
+    return [
+        {
+            "id": fact.id,
+            "subject": fact.subject.name,
+            "predicate": fact.predicate,
+            "value": (
+                fact.object_entity.name
+                if fact.object_entity_id is not None and fact.object_entity
+                else fact.object_value
+            ),
+            "source_document": fact.document.title,
+        }
+        for fact in facts
+    ]
+
+
+@app.get("/api/dashboard")
+def dashboard(
+    db: Session = Depends(get_db),
+):
+    """
+    Summary counts for the main dashboard (plan section 19),
+    including a simple "canon health" score: the share of tracked
+    conflicts that are NOT open (resolved, dismissed, or explained).
+    An empty vault or a vault with zero conflicts reads as 100%.
+    """
+
+    documents_count = db.query(Document).count()
+    entities_count = db.query(Entity).count()
+    facts_count = db.query(Fact).count()
+    events_count = db.query(Event).count()
+
+    conflicts_total = db.query(Conflict).count()
+    conflicts_open = db.query(Conflict).filter(
+        Conflict.status == ConflictStatus.OPEN
+    ).count()
+
+    canon_health = (
+        100.0
+        if conflicts_total == 0
+        else round(
+            100.0 * (conflicts_total - conflicts_open) / conflicts_total,
+            1,
+        )
+    )
+
+    open_conflicts_preview = db.scalars(
+        select(Conflict)
+        .where(Conflict.status == ConflictStatus.OPEN)
+        .order_by(Conflict.severity.desc())
+        .limit(5)
+    ).all()
+
+    return {
+        "documents": documents_count,
+        "entities": entities_count,
+        "facts": facts_count,
+        "events": events_count,
+        "conflicts_total": conflicts_total,
+        "conflicts_open": conflicts_open,
+        "canon_health_percent": canon_health,
+        "open_conflicts_preview": [
+            {
+                "id": conflict.id,
+                "entity": conflict.entity.name,
+                "severity": conflict.severity,
+                "explanation": conflict.explanation,
+            }
+            for conflict in open_conflicts_preview
+        ],
     }
