@@ -1,9 +1,11 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.vault_schema import VaultSchema
 from app.models import Conflict, ConflictStatus
 from app.rules.base import ConflictCandidate, Rule
 from app.rules.logical_rules import ExclusiveFactRule
+from app.rules.relationship_rules import RelationshipContradictionRule
 from app.rules.temporal_rules import EventDateRangeRule
 
 
@@ -22,12 +24,24 @@ class ConsistencyEngine:
         rule fires again on a later sync
     """
 
-    def __init__(self, db: Session, rules: list[Rule] | None = None):
+    def __init__(
+        self,
+        db: Session,
+        schema: VaultSchema | None = None,
+        rules: list[Rule] | None = None,
+    ):
         self.db = db
-        self.rules = rules or [
-            ExclusiveFactRule(),
-            EventDateRangeRule(),
-        ]
+
+        if rules is not None:
+            self.rules = rules
+        else:
+            self.rules = [
+                ExclusiveFactRule(),
+                EventDateRangeRule(),
+            ]
+
+            if schema is not None:
+                self.rules.append(RelationshipContradictionRule(schema))
 
     def run(self) -> dict:
         candidates: list[ConflictCandidate] = []

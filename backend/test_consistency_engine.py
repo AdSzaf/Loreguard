@@ -134,7 +134,7 @@ def main():
 
     db.commit()
 
-    engine_run_1 = ConsistencyEngine(db).run()
+    engine_run_1 = ConsistencyEngine(db, schema=schema).run()
     db.commit()
 
     check(
@@ -182,7 +182,7 @@ def main():
     db.add(conflicting_fact)
     db.commit()
 
-    result_2 = ConsistencyEngine(db).run()
+    result_2 = ConsistencyEngine(db, schema=schema).run()
     db.commit()
 
     check(
@@ -210,7 +210,7 @@ def main():
     print("CASE 3: re-running the engine is idempotent")
     print("=" * 60)
 
-    result_3 = ConsistencyEngine(db).run()
+    result_3 = ConsistencyEngine(db, schema=schema).run()
     db.commit()
 
     check(
@@ -235,7 +235,7 @@ def main():
     conflict.resolution_note = "To celowa niespójność legendy vs historii."
     db.commit()
 
-    result_4 = ConsistencyEngine(db).run()
+    result_4 = ConsistencyEngine(db, schema=schema).run()
     db.commit()
 
     db.refresh(conflict)
@@ -274,7 +274,7 @@ def main():
     )
     db.commit()
 
-    result_5 = ConsistencyEngine(db).run()
+    result_5 = ConsistencyEngine(db, schema=schema).run()
     db.commit()
 
     range_conflict = db.query(Conflict).filter(
@@ -289,6 +289,100 @@ def main():
         "range conflict references the battle entity",
         range_conflict is not None
         and range_conflict.entity.name == "Bitwa pod Arven",
+    )
+
+    # --- Relationship contradiction rule (plan section 6D) ---
+
+    print()
+    print("=" * 60)
+    print("CASE 6: 'córka' vs 'siostra' of the same person (plan 6D)")
+    print("=" * 60)
+
+    father_doc = sync_document(
+        entity_indexer, fact_extractor, event_extractor,
+        "Aldren", "Postacie/Aldren.md",
+        {"tags": ["Postać"]},
+        "",
+        now,
+    )
+    db.commit()
+
+    elira_doc = sync_document(
+        entity_indexer, fact_extractor, event_extractor,
+        "Elira", "Postacie/Elira.md",
+        {"tags": ["Postać"], "córka": "[[Aldren]]"},
+        "Elira, [[Aldren]].",
+        now,
+    )
+    db.commit()
+
+    # Second source claims a contradictory relation for the same pair
+    elira_entity = next(
+        e for e in elira_doc.entities if e.name == "Elira"
+    )
+    aldren_entity = next(
+        e for e in father_doc.entities if e.name == "Aldren"
+    )
+
+    from app.models import Fact as FactModel
+
+    db.add(
+        FactModel(
+            subject_entity_id=elira_entity.id,
+            predicate="siostra",
+            object_entity_id=aldren_entity.id,
+            document_id=elira_doc.id,
+        )
+    )
+    db.commit()
+
+    result_6 = ConsistencyEngine(db, schema=schema).run()
+    db.commit()
+
+    relationship_conflict = db.query(Conflict).filter(
+        Conflict.rule_name == "relationship_contradiction"
+    ).first()
+
+    check(
+        "'córka' vs 'siostra' of the same entity flagged",
+        relationship_conflict is not None,
+    )
+    check(
+        "relationship conflict references Elira",
+        relationship_conflict is not None
+        and relationship_conflict.entity.name == "Elira",
+    )
+    check(
+        "relationship conflict has HIGH severity",
+        relationship_conflict is not None
+        and relationship_conflict.severity.value == "high",
+    )
+
+    # Sanity: compatible relationship terms must NOT conflict
+    db.add(
+        FactModel(
+            subject_entity_id=elira_entity.id,
+            predicate="dziecko",  # same group as "córka" -> compatible
+            object_entity_id=aldren_entity.id,
+            document_id=elira_doc.id,
+        )
+    )
+    db.commit()
+
+    conflicts_before = db.query(Conflict).filter(
+        Conflict.rule_name == "relationship_contradiction"
+    ).count()
+
+    ConsistencyEngine(db, schema=schema).run()
+    db.commit()
+
+    conflicts_after = db.query(Conflict).filter(
+        Conflict.rule_name == "relationship_contradiction"
+    ).count()
+
+    check(
+        "synonymous relation terms ('córka'/'dziecko') do not conflict",
+        conflicts_after == conflicts_before,
     )
 
     print()

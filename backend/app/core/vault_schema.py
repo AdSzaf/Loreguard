@@ -65,6 +65,25 @@ DEFAULT_FIELD_ALIASES: dict[str, list[str]] = {
     "participants": ["participants", "uczestnicy", "strony"],
 }
 
+# Groups of relationship predicates that are mutually exclusive:
+# if two facts link the same (subject, object) pair using
+# predicates from two DIFFERENT groups, that's a contradiction
+# (e.g. "córka" in one group, "siostra" in another -> can't both
+# be true about the same two entities). Predicates within the same
+# group are treated as compatible/synonymous, not conflicting.
+DEFAULT_RELATIONSHIP_GROUPS: list[list[str]] = [
+    ["ojciec", "matka", "rodzic", "father", "mother", "parent"],
+    ["syn", "córka", "corka", "dziecko", "son", "daughter", "child"],
+    [
+        "brat", "siostra", "rodzeństwo", "rodzenstwo",
+        "brother", "sister", "sibling",
+    ],
+    [
+        "mąż", "maz", "żona", "zona", "małżonek", "malzonek",
+        "husband", "wife", "spouse",
+    ],
+]
+
 # Named participant roles beyond the generic "participants" bucket.
 # role -> list of frontmatter field names that carry that role.
 DEFAULT_ROLE_FIELDS: dict[str, list[str]] = {
@@ -119,6 +138,10 @@ class VaultSchema:
             for role, aliases in DEFAULT_ROLE_FIELDS.items()
         }
 
+        self._relationship_groups: list[set[str]] = [
+            set(group) for group in DEFAULT_RELATIONSHIP_GROUPS
+        ]
+
         self._event_tags: set[str] = {
             tag
             for tag, entity_type in DEFAULT_ENTITY_TYPE_TAGS.items()
@@ -161,6 +184,11 @@ class VaultSchema:
 
         for tag in (data.get("event_tags") or []):
             self._event_tags.add(str(tag).strip().casefold())
+
+        for group in (data.get("relationship_groups") or []):
+            self._relationship_groups.append(
+                {str(item).strip().casefold() for item in group}
+            )
 
     def resolve_entity_type(
         self,
@@ -223,3 +251,19 @@ class VaultSchema:
             self.get_field(frontmatter, "date") is not None
             or self.get_field(frontmatter, "date_start") is not None
         )
+
+    def relationship_group_of(self, predicate: str) -> int | None:
+        """
+        Returns the index of the relationship-exclusivity group a
+        predicate belongs to, or None if the predicate isn't a
+        known relationship term (e.g. "rasa" isn't relational, so
+        it's never compared by RelationshipContradictionRule).
+        """
+
+        key = predicate.strip().casefold()
+
+        for index, group in enumerate(self._relationship_groups):
+            if key in group:
+                return index
+
+        return None
