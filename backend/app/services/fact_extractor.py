@@ -36,6 +36,14 @@ class FactExtractor:
         if subject is None:
             return []
 
+        # Re-syncing the same document (e.g. after an edit, or on
+        # every vault watcher tick) must not accumulate duplicate
+        # or stale facts. Facts sourced from this document are
+        # replaced wholesale on every extraction.
+        self.db.query(Fact).filter(
+            Fact.document_id == document.id
+        ).delete(synchronize_session=False)
+
         facts: list[Fact] = []
 
         for predicate, raw_value in parsed_document.frontmatter.items():

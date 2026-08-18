@@ -7,7 +7,8 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
 from app.core.vault_schema import VaultSchema
-from app.models import Event
+from app.models import Conflict, ConflictStatus, Event
+from app.services.consistency_engine import ConsistencyEngine
 from app.services.document_service import DocumentService
 from app.services.entity_indexer import EntityIndexer
 from app.services.event_extractor import EventExtractor
@@ -142,10 +143,15 @@ def sync_vault(
 
     db.commit()
 
+    consistency_engine = ConsistencyEngine(db)
+    conflict_summary = consistency_engine.run()
+    db.commit()
+
     return {
         "files_found": len(files),
         "documents_synced": len(documents_summary),
         "documents": documents_summary,
+        "conflicts": conflict_summary,
     }
 
 
@@ -176,3 +182,83 @@ def list_events(
         }
         for event in events
     ]
+
+
+@app.get("/api/conflicts")
+def list_conflicts(
+    status: str | None = None,
+    db: Session = Depends(get_db),
+):
+    query = select(Conflict)
+
+    if status:
+        query = query.where(Conflict.status == ConflictStatus(status))
+
+    conflicts = db.scalars(query).all()
+
+    def describe_fact(fact) -> dict | None:
+        if fact is None:
+            return None
+
+        return {
+            "predicate": fact.predicate,
+            "value": (
+                fact.object_entity.name
+                if fact.object_entity_id is not None and fact.object_entity
+                else fact.object_value
+            ),
+            "source_document": fact.document.title,
+        }
+
+    return [
+        {
+            "id": conflict.id,
+            "entity": conflict.entity.name,
+            "rule_name": conflict.rule_name,
+            "severity": conflict.severity,
+            "confidence": conflict.confidence,
+            "status": conflict.status,
+            "explanation": conflict.explanation,
+            "fact_a": describe_fact(conflict.fact_a),
+            "fact_b": describe_fact(conflict.fact_b),
+            "related_event": (
+                conflict.related_event.entity.name
+                if conflict.related_event
+                else None
+            ),
+            "resolution_note": conflict.resolution_note,
+        }
+        for conflict in conflicts
+    ]
+
+
+@app.post("/api/conflicts/{conflict_id}/resolve")
+def resolve_conflict(
+    conflict_id: int,
+    status: str,
+    resolution_note: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Records the person's decision on a conflict. LoreGuard never
+    edits the vault itself -- this only updates LoreGuard's own
+    record of what was decided (accept / dismiss / explain).
+    """
+
+    conflict = db.get(Conflict, conflict_id)
+
+    if conflict is None:
+        return {"error": "Conflict not found"}
+
+    conflict.status = ConflictStatus(status)
+
+    if resolution_note is not None:
+        conflict.resolution_note = resolution_note
+
+    db.commit()
+
+    return {
+        "id": conflict.id,
+        "status": conflict.status,
+        "resolution_note": conflict.resolution_note,
+    }

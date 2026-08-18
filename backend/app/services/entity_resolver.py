@@ -6,6 +6,7 @@ from app.models import Document, Entity, EntityAlias, EntityType
 from app.services.entity_extractor import EntityCandidate
 
 
+
 class EntityResolver:
     """
     Resolves EntityCandidates against entities stored in the database.
@@ -82,10 +83,14 @@ class EntityResolver:
 
         return entity
 
+    def _escape_like(self, val: str) -> str:
+        """Eskapuje znaki specjalne dla klauzuli LIKE/ILIKE."""
+        return val.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     def _find_by_name(self, name: str) -> Entity | None:
         return self.db.scalar(
             select(Entity).where(
-                Entity.name.ilike(name)
+                Entity.name.ilike(self._escape_like(name))
             )
         )
 
@@ -93,7 +98,7 @@ class EntityResolver:
         return self.db.scalar(
             select(Entity)
             .join(EntityAlias)
-            .where(EntityAlias.alias.ilike(alias))
+            .where(EntityAlias.alias.ilike(self._escape_like(alias)))
         )
 
     def _create_entity(self, name: str) -> Entity:

@@ -5,6 +5,7 @@ from app.models.document_entity import DocumentEntity
 from app.models.fact import Fact
 from app.models.event import Event, DatePrecision
 from app.models.event_participant import EventParticipant
+from app.models.conflict import Conflict, ConflictStatus, ConflictSeverity
 
 __all__ = [
     "Document",
@@ -16,4 +17,7 @@ __all__ = [
     "Event",
     "DatePrecision",
     "EventParticipant",
+    "Conflict",
+    "ConflictStatus",
+    "ConflictSeverity",
 ]
