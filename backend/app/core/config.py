@@ -14,6 +14,12 @@ class Settings(BaseSettings):
 
     obsidian_vault_path: str
 
+    # Optional -- LLM-based prose fact extraction is only
+    # available when this is set. Everything else in the app works
+    # fine without it.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-sonnet-4-6"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

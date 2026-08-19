@@ -15,7 +15,9 @@ from app.services.embedding_service import EmbeddingService
 from app.services.entity_indexer import EntityIndexer
 from app.services.event_extractor import EventExtractor
 from app.services.fact_extractor import FactExtractor
+from app.services.llm_provider import AnthropicLLMProvider
 from app.services.markdown_parser import MarkdownParser
+from app.services.prose_fact_extractor import ProseFactExtractor
 from app.services.vault_scanner import VaultScanner
 
 app = FastAPI(
@@ -337,6 +339,76 @@ def similar_documents(
             }
             for similar_doc, score in results
         ],
+    }
+
+
+@app.post("/api/documents/{document_id}/extract-llm-facts")
+def extract_llm_facts(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Runs LLM-based fact extraction on this document's BODY TEXT
+    (frontmatter facts are handled separately by /api/vault/sync,
+    which never calls an LLM). This is intentionally a separate,
+    opt-in, per-document endpoint rather than part of the regular
+    sync: it costs a real API call and money, and per plan section
+    14 the LLM should never run silently as "the truth" -- the
+    person decides when and where to invoke it.
+
+    After extraction, re-runs the consistency engine so any new
+    conflicts (e.g. contradicting death dates across two articles)
+    show up immediately in /api/conflicts.
+
+    Requires ANTHROPIC_API_KEY to be set; returns a clear error
+    otherwise rather than failing with a confusing stack trace.
+    """
+
+    document = db.get(Document, document_id)
+
+    if document is None:
+        return {"error": "Document not found"}
+
+    if not settings.anthropic_api_key:
+        return {
+            "error": (
+                "ANTHROPIC_API_KEY is not set. Add it to your .env "
+                "to enable LLM fact extraction."
+            )
+        }
+
+    provider = AnthropicLLMProvider(
+        api_key=settings.anthropic_api_key,
+        model=settings.anthropic_model,
+    )
+    prose_extractor = ProseFactExtractor(db, provider)
+
+    facts = prose_extractor.extract_from_document(document)
+    db.commit()
+
+    scanner = VaultScanner()
+    schema = VaultSchema(scanner.vault_path)
+    conflict_summary = ConsistencyEngine(db, schema=schema).run()
+    db.commit()
+
+    return {
+        "document": document.title,
+        "facts_extracted": len(facts),
+        "facts": [
+            {
+                "predicate": fact.predicate,
+                "value": (
+                    fact.object_entity.name
+                    if fact.object_entity_id is not None
+                    and fact.object_entity
+                    else fact.object_value
+                ),
+                "confidence": fact.confidence,
+                "source_text": fact.source_text,
+            }
+            for fact in facts
+        ],
+        "conflicts": conflict_summary,
     }
 
 

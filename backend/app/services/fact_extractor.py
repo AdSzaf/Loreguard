@@ -38,10 +38,13 @@ class FactExtractor:
 
         # Re-syncing the same document (e.g. after an edit, or on
         # every vault watcher tick) must not accumulate duplicate
-        # or stale facts. Facts sourced from this document are
-        # replaced wholesale on every extraction.
+        # or stale facts. Only frontmatter-sourced facts for this
+        # document are replaced -- LLM-extracted facts (source_type
+        # "llm_prose") are owned by ProseFactExtractor and must
+        # survive a plain frontmatter re-sync untouched.
         self.db.query(Fact).filter(
-            Fact.document_id == document.id
+            Fact.document_id == document.id,
+            Fact.source_type == "frontmatter",
         ).delete(synchronize_session=False)
 
         facts: list[Fact] = []
@@ -67,6 +70,8 @@ class FactExtractor:
                     object_entity_id=linked_entity.id,
                     object_value=None,
                     document_id=document.id,
+                    source_type="frontmatter",
+                    confidence=1.0,
                 )
             else:
                 fact = Fact(
@@ -75,6 +80,8 @@ class FactExtractor:
                     object_entity_id=None,
                     object_value=value,
                     document_id=document.id,
+                    source_type="frontmatter",
+                    confidence=1.0,
                 )
 
             self.db.add(fact)
