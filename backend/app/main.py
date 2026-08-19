@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi import Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,7 @@ from app.core.vault_schema import VaultSchema
 from app.models import Conflict, ConflictStatus, Document, Entity, Event, Fact
 from app.services.consistency_engine import ConsistencyEngine
 from app.services.document_service import DocumentService
+from app.services.embedding_service import EmbeddingService
 from app.services.entity_indexer import EntityIndexer
 from app.services.event_extractor import EventExtractor
 from app.services.fact_extractor import FactExtractor
@@ -20,6 +22,21 @@ app = FastAPI(
     title=settings.app_name,
     description="API for maintaining consistency of a fictional world.",
     version=settings.app_version,
+)
+
+# Local dev only: Vite (default port 5173) calling FastAPI (default
+# port 8000) is a cross-origin request. No auth/session cookies are
+# involved yet, so a permissive localhost allow-list is fine for now
+# -- tighten this before ever exposing the API beyond localhost.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -90,6 +107,7 @@ def sync_vault(
     entity_indexer = EntityIndexer(db, schema)
     fact_extractor = FactExtractor(db)
     event_extractor = EventExtractor(db, schema)
+    embedding_service = EmbeddingService(db)
 
     files = scanner.scan_markdown_files()
 
@@ -131,6 +149,8 @@ def sync_vault(
             document,
             parsed_document,
         )
+
+        embedding_service.update_document_embedding(document)
 
         documents_summary.append({
             "id": document.id,
@@ -278,9 +298,46 @@ def list_documents(
             "indexed_at": document.indexed_at,
             "file_modified_at": document.file_modified_at,
             "entities_linked": len(document.entities),
+            "has_embedding": document.embedding is not None,
         }
         for document in documents
     ]
+
+
+@app.get("/api/documents/{document_id}/similar")
+def similar_documents(
+    document_id: int,
+    limit: int = 5,
+    db: Session = Depends(get_db),
+):
+    """
+    Documents most similar to this one by embedding cosine
+    similarity (plan section 27: narrow the vault down to relevant
+    documents before handing anything to an LLM). Currently backed
+    by an offline placeholder embedding (see embedding_provider.py)
+    -- similarity reflects shared vocabulary, not meaning, until a
+    real provider is plugged in.
+    """
+
+    document = db.get(Document, document_id)
+
+    if document is None:
+        return {"error": "Document not found"}
+
+    embedding_service = EmbeddingService(db)
+    results = embedding_service.find_similar(document, limit=limit)
+
+    return {
+        "document": document.title,
+        "similar": [
+            {
+                "id": similar_doc.id,
+                "title": similar_doc.title,
+                "similarity": round(score, 4),
+            }
+            for similar_doc, score in results
+        ],
+    }
 
 
 @app.get("/api/entities")

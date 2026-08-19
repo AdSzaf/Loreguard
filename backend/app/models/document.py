@@ -4,6 +4,7 @@ from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.embedding_vector import EmbeddingVector
 
 
 class Document(Base):
@@ -59,6 +60,16 @@ class Document(Base):
     )
 
     indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    embedding: Mapped[list[float] | None] = mapped_column(
+        EmbeddingVector,
+        nullable=True,
+    )
+
+    embedding_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
     )
