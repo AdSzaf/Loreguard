@@ -1,0 +1,79 @@
+:root {
+  /* -- color: ink & wax-seal archive palette -- */
+  --bg: #14161d;
+  --surface: #1b1e27;
+  --surface-raised: #232733;
+  --border: #2b3040;
+  --border-soft: #23273266;
+
+  --text: #e9e6db;
+  --text-muted: #9195a6;
+  --text-faint: #5c6072;
+
+  --accent: #c9a15a;
+  --accent-soft: rgba(201, 161, 90, 0.14);
+  --accent-strong: #e0b96e;
+
+  --severity-high: #c1524a;
+  --severity-high-soft: rgba(193, 82, 74, 0.14);
+  --severity-medium: #c9a15a;
+  --severity-medium-soft: rgba(201, 161, 90, 0.14);
+  --severity-low: #6f9a80;
+  --severity-low-soft: rgba(111, 154, 128, 0.14);
+
+  --status-open: #c1524a;
+  --status-confirmed: #c9a15a;
+  --status-dismissed: #5c6072;
+  --status-explained: #6f9a80;
+
+  /* -- type -- */
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* -- layout -- */
+  --radius: 8px;
+  --radius-lg: 14px;
+  --sidebar-width: 232px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

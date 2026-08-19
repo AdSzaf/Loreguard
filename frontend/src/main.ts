@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
-import './style.css'
+import './styles/tokens.css'
 import App from './App.vue'
+import { router } from './router' // <-- nawiasy klamrowe
 
-createApp(App).mount('#app')
+createApp(App).use(router).mount('#app')
