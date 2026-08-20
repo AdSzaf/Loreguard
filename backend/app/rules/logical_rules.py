@@ -3,6 +3,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.vault_schema import VaultSchema
 from app.models import ConflictSeverity, Fact
 from app.rules.base import ConflictCandidate, Rule
 
@@ -11,14 +12,15 @@ class ExclusiveFactRule(Rule):
     """
     A subject shouldn't have two different values recorded for the
     same predicate -- e.g. two different `rasa` for one character,
-    or (once prose extraction exists) two different `died` years
-    for one person.
+    or two different death years for one person.
 
     This is the generic mechanism behind plan section 23's
     "character_single_death" / "kingdom_single_capital" idea. It
-    doesn't special-case any predicate name, so it works today on
-    frontmatter-sourced Facts, and needs no changes once step 19
-    (LLM prose extraction) starts producing facts like `died`.
+    doesn't special-case any predicate name -- instead, predicates
+    are grouped by VaultSchema.canonicalize_predicate() first, so
+    "zginął" (from one article) and "umarł" (from another) are
+    compared as the same underlying concept even though an LLM (or
+    two different authors) used different words for it.
 
     Facts pointing at an Entity are compared by entity id. Plain
     text facts are compared case-insensitively after normalizing
@@ -32,6 +34,9 @@ class ExclusiveFactRule(Rule):
 
     name = "exclusive_fact"
 
+    def __init__(self, schema: VaultSchema):
+        self.schema = schema
+
     def evaluate(self, db: Session) -> list[ConflictCandidate]:
         facts = db.scalars(select(Fact)).all()
 
@@ -40,13 +45,13 @@ class ExclusiveFactRule(Rule):
         for fact in facts:
             key = (
                 fact.subject_entity_id,
-                fact.predicate.strip().casefold(),
+                self.schema.canonicalize_predicate(fact.predicate),
             )
             grouped[key].append(fact)
 
         candidates: list[ConflictCandidate] = []
 
-        for (entity_id, predicate), group in grouped.items():
+        for (entity_id, canonical_predicate), group in grouped.items():
             by_value: dict[str, list[Fact]] = defaultdict(list)
 
             for fact in group:
@@ -59,6 +64,13 @@ class ExclusiveFactRule(Rule):
             fact_a = variants[0][0]
             fact_b = variants[1][0]
 
+            label = (
+                f"'{fact_a.predicate}'"
+                if fact_a.predicate.strip().casefold()
+                == fact_b.predicate.strip().casefold()
+                else f"'{fact_a.predicate}'/'{fact_b.predicate}'"
+            )
+
             candidates.append(
                 ConflictCandidate(
                     entity_id=entity_id,
@@ -66,7 +78,7 @@ class ExclusiveFactRule(Rule):
                     severity=ConflictSeverity.MEDIUM,
                     confidence=0.9,
                     explanation=(
-                        f"'{predicate}' has conflicting values: "
+                        f"{label} has conflicting values: "
                         f"'{self._display(fact_a)}' "
                         f"(from {fact_a.document.title}) vs "
                         f"'{self._display(fact_b)}' "

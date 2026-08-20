@@ -1,5 +1,9 @@
 import json
+import logging
 from dataclasses import dataclass
+
+
+logger = logging.getLogger("loreguard.llm")
 
 
 @dataclass
@@ -50,7 +54,17 @@ Zasady:
   bezokolicznikowej/rzeczownikowej (np. "zmarł", "urodził się", \
   "był ojcem", nie pełnym zdaniem).
 - Jeśli fakt dotyczy daty/roku, umieść samą liczbę/opis daty w polu \
-  "object" (np. "842", "wiosna 842"), a nie całe zdanie.
+  "object" (np. "842", "wiosna 842"), a nie całe zdanie. Jeśli tekst \
+  NIE podaje daty wprost (np. mówi tylko "zginął w tej bitwie" bez \
+  roku), NIE zgaduj daty -- w object wpisz nazwę własną rzeczy/miejsca/\
+  wydarzenia, którego dotyczy fakt (patrz przykład 2 niżej).
+- KLUCZOWE -- polski szyk zdania bywa odwrócony, a zaimki ("w niej", \
+  "przez niego", "jego", "która") odnoszą się do czegoś wymienionego \
+  wcześniej lub w tytule/kontekście notatki. subject i object MUSZĄ \
+  być pełnymi nazwami własnymi -- NIGDY nie wpisuj zaimka ("w niej", \
+  "go", "jej") jako object. Jeśli zaimek odnosi się do samego tematu \
+  notatki (np. do wydarzenia, o którym jest cały artykuł), użyj jego \
+  pełnej nazwy jako object.
 - subject i object podawaj jako nazwy własne dokładnie tak, jak \
   występują w tekście (nie tłumacz, nie skracaj, nie zamieniaj na \
   zaimki).
@@ -62,6 +76,19 @@ Zasady:
   0.5-0.8 dla domyślnego ale jasnego, poniżej 0.5 dla niepewnego.
 - source_text to dokładny cytat (fragment zdania) z tekstu, na \
   podstawie którego wyciągnięto fakt.
+
+Przykłady:
+
+1. Tekst: "Umarł w 3030 K.E." (notatka o osobie "Serigius I")
+   -> {{"subject": "Serigius I", "predicate": "umarł", \
+"object": "3030 K.E.", "confidence": 0.95, "source_text": "Umarł w 3030 K.E."}}
+
+2. Tekst: "Zginął w niej Serigius I." (notatka o wydarzeniu \
+"Bitwa pod Soizon", zaimek "w niej" odnosi się do tej bitwy -- BRAK \
+roku w tym zdaniu, więc object to nazwa bitwy, NIE zgadujemy daty)
+   -> {{"subject": "Serigius I", "predicate": "zginął", \
+"object": "Bitwa pod Soizon", "confidence": 0.9, \
+"source_text": "Zginął w niej Serigius I."}}
 
 Znane encje w tym świecie (subject/object powinny się do nich \
 odnosić, jeśli to możliwe): {known_entities}
@@ -92,22 +119,43 @@ def _parse_extracted_facts(raw_text: str) -> list[ExtractedFact]:
     response object -- the parsing/validation logic (and its
     quirks: code fences, malformed items, out-of-range confidence)
     lives in exactly one place.
+
+    Logs the raw response whenever parsing yields nothing, so a
+    silent "0 facts extracted" in the API response is diagnosable
+    from the server console instead of being a total mystery.
     """
 
+    original = raw_text
     raw_text = _strip_code_fences(raw_text.strip())
+
+    if not raw_text:
+        logger.warning("LLM returned an empty response.")
+        return []
 
     try:
         items = json.loads(raw_text)
     except json.JSONDecodeError:
+        logger.warning(
+            "LLM response was not valid JSON, dropping it. "
+            "Raw response: %r",
+            original[:2000],
+        )
         return []
 
     if not isinstance(items, list):
+        logger.warning(
+            "LLM response was valid JSON but not a list, dropping it. "
+            "Raw response: %r",
+            original[:2000],
+        )
         return []
 
     facts: list[ExtractedFact] = []
+    dropped = 0
 
     for item in items:
         if not isinstance(item, dict):
+            dropped += 1
             continue
 
         try:
@@ -121,7 +169,20 @@ def _parse_extracted_facts(raw_text: str) -> list[ExtractedFact]:
                 )
             )
         except (KeyError, TypeError, ValueError):
+            dropped += 1
             continue
+
+    if dropped:
+        logger.warning(
+            "Dropped %d malformed item(s) from LLM response.", dropped
+        )
+
+    if not facts and items:
+        logger.info(
+            "LLM returned a JSON list but every item was malformed. "
+            "Raw response: %r",
+            original[:2000],
+        )
 
     return facts
 
@@ -191,7 +252,7 @@ class GeminiLLMProvider(LLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash-lite",
+        model: str = "gemini-3.5-flash-lite",
     ):
         # Imported lazily so the `google-genai` package is only
         # required when this provider is actually used.

@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Document, Entity, EntityAlias, Fact
-from app.services.llm_provider import LLMProvider
+from app.services.llm_provider import LLMProvider, logger
 
 
 class ProseFactExtractor:
@@ -63,6 +63,16 @@ class ProseFactExtractor:
             subject = self._find_entity(candidate.subject)
 
             if subject is None:
+                logger.info(
+                    "Dropping LLM fact: subject %r not found among "
+                    "known entities (predicate=%r, object=%r, "
+                    "doc=%r). Add a note for this entity, or link it "
+                    "elsewhere in the vault, so it gets indexed first.",
+                    candidate.subject,
+                    candidate.predicate,
+                    candidate.object,
+                    document.title,
+                )
                 continue
 
             object_entity = self._find_entity(candidate.object)

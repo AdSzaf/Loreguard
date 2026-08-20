@@ -14,6 +14,9 @@ import { RouterLink, RouterView } from "vue-router";
         <RouterLink to="/" class="nav__link" active-class="nav__link--active" exact-active-class="nav__link--active">
           Dashboard
         </RouterLink>
+        <RouterLink to="/documents" class="nav__link" active-class="nav__link--active">
+          Dokumenty
+        </RouterLink>
         <RouterLink to="/conflicts" class="nav__link" active-class="nav__link--active">
           Konflikty
         </RouterLink>

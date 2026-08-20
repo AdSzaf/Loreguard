@@ -84,6 +84,20 @@ DEFAULT_RELATIONSHIP_GROUPS: list[list[str]] = [
     ],
 ]
 
+# Different words for the same underlying concept, so facts using
+# different vocabulary for "died" (say) are still compared against
+# each other by ExclusiveFactRule instead of silently passing each
+# other by because the raw predicate strings don't match.
+# Everything in a group is treated as equivalent -- NOT mutually
+# exclusive (that's DEFAULT_RELATIONSHIP_GROUPS, a different thing).
+DEFAULT_PREDICATE_SYNONYMS: dict[str, str] = {
+    "zginął": "died", "zginęła": "died", "zmarł": "died",
+    "zmarła": "died", "umarł": "died", "umarła": "died",
+    "died": "died", "death": "died", "dies": "died",
+    "urodził się": "born", "urodziła się": "born", "narodziny": "born",
+    "born": "born", "birth": "born",
+}
+
 # Named participant roles beyond the generic "participants" bucket.
 # role -> list of frontmatter field names that carry that role.
 DEFAULT_ROLE_FIELDS: dict[str, list[str]] = {
@@ -142,6 +156,11 @@ class VaultSchema:
             set(group) for group in DEFAULT_RELATIONSHIP_GROUPS
         ]
 
+        self._predicate_synonyms: dict[str, str] = {
+            term.casefold(): canonical
+            for term, canonical in DEFAULT_PREDICATE_SYNONYMS.items()
+        }
+
         self._event_tags: set[str] = {
             tag
             for tag, entity_type in DEFAULT_ENTITY_TYPE_TAGS.items()
@@ -184,6 +203,12 @@ class VaultSchema:
 
         for tag in (data.get("event_tags") or []):
             self._event_tags.add(str(tag).strip().casefold())
+
+        for canonical, terms in (data.get("predicate_synonyms") or {}).items():
+            for term in terms:
+                self._predicate_synonyms[str(term).strip().casefold()] = (
+                    str(canonical).strip().casefold()
+                )
 
         for group in (data.get("relationship_groups") or []):
             self._relationship_groups.append(
@@ -242,6 +267,18 @@ class VaultSchema:
 
     def get_field_aliases(self, concept: str) -> list[str]:
         return self._field_aliases.get(concept, [concept])
+
+    def canonicalize_predicate(self, predicate: str) -> str:
+        """
+        Maps a raw predicate string to a canonical form so
+        different vocabulary for the same concept ("zginął" /
+        "umarł" / "died") is treated as one predicate when checking
+        for contradictions. Predicates not in the synonym table are
+        returned casefolded/stripped, unchanged otherwise.
+        """
+
+        key = predicate.strip().casefold()
+        return self._predicate_synonyms.get(key, key)
 
     def get_role_fields(self) -> dict[str, list[str]]:
         return self._role_fields

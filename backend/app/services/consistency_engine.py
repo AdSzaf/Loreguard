@@ -35,12 +35,10 @@ class ConsistencyEngine:
         if rules is not None:
             self.rules = rules
         else:
-            self.rules = [
-                ExclusiveFactRule(),
-                EventDateRangeRule(),
-            ]
+            self.rules = [EventDateRangeRule()]
 
             if schema is not None:
+                self.rules.append(ExclusiveFactRule(schema))
                 self.rules.append(RelationshipContradictionRule(schema))
 
     def run(self) -> dict:

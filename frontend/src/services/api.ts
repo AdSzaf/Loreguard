@@ -7,6 +7,8 @@ import type {
   EntitySummary,
   EventView,
   FactView,
+  LlmExtractionResult,
+  LlmStatus,
   SyncResult,
 } from "../types/api";
 
@@ -45,6 +47,14 @@ export const api = {
   syncVault: () => request<SyncResult>("/api/vault/sync", { method: "POST" }),
 
   documents: () => request<DocumentSummary[]>("/api/documents"),
+
+  llmStatus: () => request<LlmStatus>("/api/llm/status"),
+
+  extractLlmFacts: (documentId: number) =>
+    request<LlmExtractionResult>(
+      `/api/documents/${documentId}/extract-llm-facts`,
+      { method: "POST" },
+    ),
 
   entities: (entityType?: string) =>
     request<EntitySummary[]>(

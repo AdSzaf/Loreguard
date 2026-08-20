@@ -39,6 +39,33 @@ export interface DocumentSummary {
   indexed_at: string | null;
   file_modified_at: string;
   entities_linked: number;
+  has_embedding?: boolean;
+}
+
+export interface LlmStatus {
+  active_provider: string | null;
+  model?: string | null;
+  anthropic_key_set: boolean;
+  gemini_key_set: boolean;
+}
+
+export interface ExtractedFactView {
+  predicate: string;
+  value: string | null;
+  confidence: number;
+  source_text: string | null;
+}
+
+export interface LlmExtractionResult {
+  document?: string;
+  facts_extracted?: number;
+  facts?: ExtractedFactView[];
+  conflicts?: {
+    candidates_found: number;
+    created: number;
+    skipped_existing: number;
+  };
+  error?: string;
 }
 
 export interface EntitySummary {
