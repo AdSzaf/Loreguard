@@ -15,7 +15,7 @@ from app.services.embedding_service import EmbeddingService
 from app.services.entity_indexer import EntityIndexer
 from app.services.event_extractor import EventExtractor
 from app.services.fact_extractor import FactExtractor
-from app.services.llm_provider import AnthropicLLMProvider
+from app.services.llm_provider import get_llm_provider
 from app.services.markdown_parser import MarkdownParser
 from app.services.prose_fact_extractor import ProseFactExtractor
 from app.services.vault_scanner import VaultScanner
@@ -342,6 +342,31 @@ def similar_documents(
     }
 
 
+@app.get("/api/llm/status")
+def llm_status():
+    """
+    Which LLM provider (if any) is currently active, without
+    making a real API call. Useful for confirming your .env is
+    wired up correctly before spending a real request on it.
+    """
+
+    provider = get_llm_provider(settings)
+
+    if provider is None:
+        return {
+            "active_provider": None,
+            "anthropic_key_set": bool(settings.anthropic_api_key),
+            "gemini_key_set": bool(settings.gemini_api_key),
+        }
+
+    return {
+        "active_provider": type(provider).__name__,
+        "model": getattr(provider, "model", None),
+        "anthropic_key_set": bool(settings.anthropic_api_key),
+        "gemini_key_set": bool(settings.gemini_api_key),
+    }
+
+
 @app.post("/api/documents/{document_id}/extract-llm-facts")
 def extract_llm_facts(
     document_id: int,
@@ -360,8 +385,10 @@ def extract_llm_facts(
     conflicts (e.g. contradicting death dates across two articles)
     show up immediately in /api/conflicts.
 
-    Requires ANTHROPIC_API_KEY to be set; returns a clear error
-    otherwise rather than failing with a confusing stack trace.
+    Requires ANTHROPIC_API_KEY or GEMINI_API_KEY to be set (see
+    LLM_PROVIDER in .env for which one wins if both are); returns a
+    clear error otherwise rather than failing with a confusing
+    stack trace.
     """
 
     document = db.get(Document, document_id)
@@ -369,18 +396,17 @@ def extract_llm_facts(
     if document is None:
         return {"error": "Document not found"}
 
-    if not settings.anthropic_api_key:
+    provider = get_llm_provider(settings)
+
+    if provider is None:
         return {
             "error": (
-                "ANTHROPIC_API_KEY is not set. Add it to your .env "
-                "to enable LLM fact extraction."
+                "No LLM provider configured. Set ANTHROPIC_API_KEY "
+                "and/or GEMINI_API_KEY in your .env to enable LLM "
+                "fact extraction."
             )
         }
 
-    provider = AnthropicLLMProvider(
-        api_key=settings.anthropic_api_key,
-        model=settings.anthropic_model,
-    )
     prose_extractor = ProseFactExtractor(db, provider)
 
     facts = prose_extractor.extract_from_document(document)

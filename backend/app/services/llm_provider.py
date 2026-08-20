@@ -25,7 +25,8 @@ class LLMProvider:
     Abstract LLM provider (mirrors EmbeddingProvider's pattern, and
     the plan's own LLMProvider sketch in section 15). The rest of
     the app only depends on this interface, so swapping Anthropic
-    for OpenAI/local Ollama/etc. later is a one-class change.
+    for Gemini/OpenAI/local Ollama/etc. is a one-class change --
+    see get_llm_provider() below for how the app picks one.
     """
 
     def extract_facts(
@@ -71,21 +72,73 @@ source_text. Jeśli nie ma żadnych faktów, zwróć [].
 """
 
 
+def _strip_code_fences(text: str) -> str:
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:]
+
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+
+        return "\n".join(lines).strip()
+
+    return text
+
+
+def _parse_extracted_facts(raw_text: str) -> list[ExtractedFact]:
+    """
+    Shared JSON-array-of-facts parser used by every provider, so
+    each provider only has to get raw text out of its own SDK's
+    response object -- the parsing/validation logic (and its
+    quirks: code fences, malformed items, out-of-range confidence)
+    lives in exactly one place.
+    """
+
+    raw_text = _strip_code_fences(raw_text.strip())
+
+    try:
+        items = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(items, list):
+        return []
+
+    facts: list[ExtractedFact] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            facts.append(
+                ExtractedFact(
+                    subject=str(item["subject"]).strip(),
+                    predicate=str(item["predicate"]).strip(),
+                    object=str(item["object"]).strip(),
+                    confidence=float(item.get("confidence", 0.5)),
+                    source_text=str(item.get("source_text", "")).strip(),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    return facts
+
+
 class AnthropicLLMProvider(LLMProvider):
     """
     Real LLM-backed extraction using the Anthropic Messages API.
 
-    Requires ANTHROPIC_API_KEY (see app.core.config.settings). If
-    it's not set, the caller should fall back to a provider that
-    doesn't need one (or simply not offer LLM extraction) --
-    that's handled at the call site (main.py), not here, so this
-    class stays simple.
+    Requires settings.anthropic_api_key. Construction itself never
+    touches the network, so it's safe to instantiate speculatively
+    (see get_llm_provider()).
     """
 
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-sonnet-4-6",
+        model: str = "claude-haiku-4-5",
     ):
         # Imported lazily so the `anthropic` package is only
         # required when this provider is actually used.
@@ -117,48 +170,109 @@ class AnthropicLLMProvider(LLMProvider):
 
         raw_text = "".join(
             block.text for block in response.content if block.type == "text"
-        ).strip()
+        )
 
-        raw_text = self._strip_code_fences(raw_text)
+        return _parse_extracted_facts(raw_text)
 
-        try:
-            items = json.loads(raw_text)
-        except json.JSONDecodeError:
+
+class GeminiLLMProvider(LLMProvider):
+    """
+    Real LLM-backed extraction using Google's Gemini API (the
+    `google-genai` SDK). Requires settings.gemini_api_key.
+
+    Uses Gemini's native JSON response mode (response_mime_type=
+    "application/json") instead of asking nicely in the prompt --
+    more reliable than Anthropic's plain-text-that-happens-to-be-
+    JSON approach, but both end up parsed by the same
+    _parse_extracted_facts() so behavior stays consistent either
+    way.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.5-flash-lite",
+    ):
+        # Imported lazily so the `google-genai` package is only
+        # required when this provider is actually used.
+        from google import genai
+
+        self.client = genai.Client(api_key=api_key)
+        self.model = model
+
+    def extract_facts(
+        self,
+        text: str,
+        known_entity_names: list[str],
+    ) -> list[ExtractedFact]:
+        text = text.strip()
+
+        if not text:
             return []
 
-        if not isinstance(items, list):
-            return []
+        from google.genai import types
 
-        facts: list[ExtractedFact] = []
+        system_prompt = EXTRACTION_SYSTEM_PROMPT.format(
+            known_entities=", ".join(known_entity_names) or "(brak)",
+        )
 
-        for item in items:
-            if not isinstance(item, dict):
-                continue
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=text,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+            ),
+        )
 
-            try:
-                facts.append(
-                    ExtractedFact(
-                        subject=str(item["subject"]).strip(),
-                        predicate=str(item["predicate"]).strip(),
-                        object=str(item["object"]).strip(),
-                        confidence=float(item.get("confidence", 0.5)),
-                        source_text=str(item.get("source_text", "")).strip(),
-                    )
-                )
-            except (KeyError, TypeError, ValueError):
-                continue
+        return _parse_extracted_facts(response.text or "")
 
-        return facts
 
-    @staticmethod
-    def _strip_code_fences(text: str) -> str:
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = lines[1:]
+def get_llm_provider(settings) -> LLMProvider | None:
+    """
+    Picks whichever LLM provider is actually configured, so the
+    rest of the app never has to know or care which one is in use.
 
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
+    Selection:
+      - settings.llm_provider == "anthropic" -> Anthropic, or None
+        if its key isn't set (explicit choice, no silent fallback)
+      - settings.llm_provider == "gemini" -> Gemini, or None if its
+        key isn't set
+      - settings.llm_provider == "auto" (default) -> Gemini if its
+        key is set (it's the free option), else Anthropic if its
+        key is set, else None
+    """
 
-            return "\n".join(lines).strip()
+    choice = (settings.llm_provider or "auto").strip().lower()
 
-        return text
+    if choice == "anthropic":
+        if not settings.anthropic_api_key:
+            return None
+        return AnthropicLLMProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.anthropic_model,
+        )
+
+    if choice == "gemini":
+        if not settings.gemini_api_key:
+            return None
+        return GeminiLLMProvider(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+        )
+
+    # auto
+    if settings.gemini_api_key:
+        return GeminiLLMProvider(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+        )
+
+    if settings.anthropic_api_key:
+        return AnthropicLLMProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.anthropic_model,
+        )
+
+    return None
+
