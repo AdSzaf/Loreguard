@@ -134,6 +134,28 @@ def sync_vault(
             entry["parsed"].frontmatter,
         )
 
+    # Documents whose file disappeared from the vault (renamed,
+    # moved outside, or deleted) get removed too -- Fact/Event/
+    # DocumentEntity rows cascade automatically via their FKs.
+    #
+    # Safety: only ever runs when the scan actually found files.
+    # If `files` is empty (e.g. a misconfigured or momentarily
+    # unreachable OBSIDIAN_VAULT_PATH), skip deletion entirely --
+    # otherwise a bad path could silently wipe the whole database.
+    documents_deleted = 0
+
+    if files:
+        synced_ids = {entry["document"].id for entry in synced}
+
+        stale_documents = db.scalars(
+            select(Document).where(Document.id.not_in(synced_ids))
+        ).all()
+
+        for stale_document in stale_documents:
+            db.delete(stale_document)
+
+        documents_deleted = len(stale_documents)
+
     db.commit()
 
     documents_summary = []
@@ -172,6 +194,7 @@ def sync_vault(
     return {
         "files_found": len(files),
         "documents_synced": len(documents_summary),
+        "documents_deleted": documents_deleted,
         "documents": documents_summary,
         "conflicts": conflict_summary,
     }

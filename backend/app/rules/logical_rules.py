@@ -4,8 +4,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.vault_schema import VaultSchema
-from app.models import ConflictSeverity, Fact
+from app.models import ConflictSeverity, Event, Fact
 from app.rules.base import ConflictCandidate, Rule
+from app.services.event_extractor import DateParser
+
+
+# Canonical predicates (after VaultSchema.canonicalize_predicate)
+# whose values are fundamentally dates/years, even when phrased as
+# "died in that event" rather than "died in year X". For these,
+# the rule resolves an actual year before comparing -- see
+# _resolve() below.
+TEMPORAL_PREDICATES = {"died", "born"}
 
 
 class ExclusiveFactRule(Rule):
@@ -22,6 +31,22 @@ class ExclusiveFactRule(Rule):
     compared as the same underlying concept even though an LLM (or
     two different authors) used different words for it.
 
+    Grounding temporal facts against Event dates
+    ---------------------------------------------
+    A death/birth fact's object is sometimes an EVENT ("zginął w
+    Bitwie pod Soizon") rather than a literal year ("umarł w 3030").
+    Comparing those naively (an entity vs a string) would either
+    always look "different" (even if the battle really did happen
+    in 3030 -- a false positive) or never be usefully explained.
+
+    Instead, for TEMPORAL_PREDICATES, this rule looks up the
+    linked Event's own date_start_year (already extracted from
+    frontmatter by EventExtractor -- no LLM involved in this step)
+    and compares actual years. If the event has no known date, it
+    falls back to comparing by entity/text identity, same as
+    before -- still surfaced, just at slightly lower confidence,
+    since it's a softer signal than a directly grounded date clash.
+
     Facts pointing at an Entity are compared by entity id. Plain
     text facts are compared case-insensitively after normalizing
     whitespace, so trivial formatting differences ("Człowiek " vs
@@ -36,6 +61,7 @@ class ExclusiveFactRule(Rule):
 
     def __init__(self, schema: VaultSchema):
         self.schema = schema
+        self.date_parser = DateParser()
 
     def evaluate(self, db: Session) -> list[ConflictCandidate]:
         facts = db.scalars(select(Fact)).all()
@@ -52,10 +78,17 @@ class ExclusiveFactRule(Rule):
         candidates: list[ConflictCandidate] = []
 
         for (entity_id, canonical_predicate), group in grouped.items():
+            is_temporal = canonical_predicate in TEMPORAL_PREDICATES
+
+            resolved = {
+                fact.id: self._resolve(db, fact, is_temporal)
+                for fact in group
+            }
+
             by_value: dict[str, list[Fact]] = defaultdict(list)
 
             for fact in group:
-                by_value[self._normalize(fact)].append(fact)
+                by_value[resolved[fact.id][0]].append(fact)
 
             if len(by_value) < 2:
                 continue
@@ -63,6 +96,11 @@ class ExclusiveFactRule(Rule):
             variants = list(by_value.values())
             fact_a = variants[0][0]
             fact_b = variants[1][0]
+
+            _, display_a, year_a = resolved[fact_a.id]
+            _, display_b, year_b = resolved[fact_b.id]
+
+            grounded = is_temporal and year_a is not None and year_b is not None
 
             label = (
                 f"'{fact_a.predicate}'"
@@ -76,12 +114,12 @@ class ExclusiveFactRule(Rule):
                     entity_id=entity_id,
                     rule_name=self.name,
                     severity=ConflictSeverity.MEDIUM,
-                    confidence=0.9,
+                    confidence=0.95 if grounded else 0.9,
                     explanation=(
                         f"{label} has conflicting values: "
-                        f"'{self._display(fact_a)}' "
+                        f"'{display_a}' "
                         f"(from {fact_a.document.title}) vs "
-                        f"'{self._display(fact_b)}' "
+                        f"'{display_b}' "
                         f"(from {fact_b.document.title})"
                     ),
                     fact_a_id=fact_a.id,
@@ -91,16 +129,62 @@ class ExclusiveFactRule(Rule):
 
         return candidates
 
-    @staticmethod
-    def _normalize(fact: Fact) -> str:
+    def _resolve(
+        self,
+        db: Session,
+        fact: Fact,
+        is_temporal: bool,
+    ) -> tuple[str, str, int | None]:
+        """
+        Returns (normalize_key, display_string, resolved_year).
+        resolved_year is None unless is_temporal and an actual year
+        could be determined (either directly, or via a linked
+        Event's date_start_year).
+        """
+
+        if is_temporal:
+            year = self._resolve_year(db, fact)
+
+            if year is not None:
+                if fact.object_entity_id is not None:
+                    event_name = (
+                        fact.object_entity.name
+                        if fact.object_entity
+                        else "?"
+                    )
+                    return (
+                        f"year:{year}",
+                        f"{year} (data wydarzenia: {event_name})",
+                        year,
+                    )
+
+                return f"year:{year}", str(year), year
+
         if fact.object_entity_id is not None:
-            return f"entity:{fact.object_entity_id}"
+            name = fact.object_entity.name if fact.object_entity else "?"
+            return f"entity:{fact.object_entity_id}", name, None
 
-        return " ".join((fact.object_value or "").strip().casefold().split())
+        normalized_text = " ".join(
+            (fact.object_value or "").strip().casefold().split()
+        )
 
-    @staticmethod
-    def _display(fact: Fact) -> str:
+        return normalized_text, (fact.object_value or "?"), None
+
+    def _resolve_year(self, db: Session, fact: Fact) -> int | None:
         if fact.object_entity_id is not None:
-            return fact.object_entity.name if fact.object_entity else "?"
+            event = db.scalar(
+                select(Event).where(
+                    Event.entity_id == fact.object_entity_id
+                )
+            )
 
-        return fact.object_value or "?"
+            if event is not None and event.date_start_year is not None:
+                return event.date_start_year
+
+            return None
+
+        if fact.object_value:
+            year, _, _ = self.date_parser.parse(fact.object_value)
+            return year
+
+        return None

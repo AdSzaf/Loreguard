@@ -64,8 +64,8 @@ def main():
     print("=" * 60)
 
     serigius = Entity(name="Serigius I", entity_type=EntityType.PERSON)
-    battle = Entity(name="Bitwa pod Soizon", entity_type=EntityType.EVENT)
-    db.add_all([serigius, battle])
+    battle_entity = Entity(name="Bitwa pod Soizon", entity_type=EntityType.EVENT)
+    db.add_all([serigius, battle_entity])
     db.commit()
 
     battle_doc = Document(
@@ -83,6 +83,22 @@ def main():
         file_modified_at=now,
     )
     db.add_all([battle_doc, serigius_doc])
+    db.commit()
+
+    # Mirrors what EventExtractor already produces from frontmatter
+    # (data_wydarzenia: 2996 KE) -- the point of this test is that
+    # the rule reads THIS, not just the raw LLM-extracted object.
+    from app.models import Event as EventModel
+
+    db.add(
+        EventModel(
+            entity_id=battle_entity.id,
+            document_id=battle_doc.id,
+            date_text="2996 KE",
+            date_start_year=2996,
+            date_end_year=2996,
+        )
+    )
     db.commit()
 
     fake_provider = FakeLLMProvider(
@@ -138,7 +154,97 @@ def main():
         "explanation shows BOTH original words, not a fabricated one",
         "zginął" in conflict.explanation and "umarł" in conflict.explanation,
     )
+    check(
+        "the battle's ACTUAL year (2996) is shown, not just its name",
+        "2996" in conflict.explanation,
+    )
+    check(
+        "the years are genuinely different (2996 vs 3030), so this",
+        "2996" in conflict.explanation and "3030" in conflict.explanation,
+    )
+    check(
+        "grounded temporal conflicts get higher confidence (0.95)",
+        conflict.confidence == 0.95,
+    )
     print(f"  explanation: {conflict.explanation}")
+
+    print()
+    print("=" * 60)
+    print("CASE 1b: if the event's year actually MATCHES the death")
+    print("           year, this must NOT be flagged (no false positive)")
+    print("=" * 60)
+
+    matching_battle_entity = Entity(
+        name="Bitwa o Zgodne Daty", entity_type=EntityType.EVENT
+    )
+    matching_person = Entity(
+        name="Osoba Zgodna", entity_type=EntityType.PERSON
+    )
+    db.add_all([matching_battle_entity, matching_person])
+    db.commit()
+
+    matching_battle_doc = Document(
+        title="Bitwa o Zgodne Daty",
+        path="Bitwa_Zgodne.md",
+        content="Zginęła w niej Osoba Zgodna.",
+        content_hash="matching-battle-1",
+        file_modified_at=now,
+    )
+    matching_person_doc = Document(
+        title="Osoba Zgodna",
+        path="Osoba_Zgodna.md",
+        content="Zmarła w 500 roku.",
+        content_hash="matching-person-1",
+        file_modified_at=now,
+    )
+    db.add_all([matching_battle_doc, matching_person_doc])
+    db.commit()
+
+    from app.models import Event as EventModel2
+
+    db.add(
+        EventModel2(
+            entity_id=matching_battle_entity.id,
+            document_id=matching_battle_doc.id,
+            date_text="500",
+            date_start_year=500,
+            date_end_year=500,
+        )
+    )
+    db.commit()
+
+    matching_provider = FakeLLMProvider(
+        scripted_responses=[
+            [
+                ExtractedFact(
+                    subject="Osoba Zgodna", predicate="zginęła",
+                    object="Bitwa o Zgodne Daty", confidence=0.9,
+                    source_text="Zginęła w niej Osoba Zgodna.",
+                ),
+            ],
+            [
+                ExtractedFact(
+                    subject="Osoba Zgodna", predicate="zmarła",
+                    object="500", confidence=0.9,
+                    source_text="Zmarła w 500 roku.",
+                ),
+            ],
+        ]
+    )
+
+    matching_extractor = ProseFactExtractor(db, matching_provider)
+    matching_extractor.extract_from_document(matching_battle_doc)
+    db.commit()
+    matching_extractor.extract_from_document(matching_person_doc)
+    db.commit()
+
+    result_1b = ConsistencyEngine(db, schema=schema).run()
+    db.commit()
+
+    check(
+        "matching years (battle=500, death=500) -> NO false-positive conflict",
+        result_1b["created"] == 0,
+    )
 
     print()
     print("=" * 60)
