@@ -15,7 +15,7 @@ from app.services.embedding_service import EmbeddingService
 from app.services.entity_indexer import EntityIndexer
 from app.services.event_extractor import EventExtractor
 from app.services.fact_extractor import FactExtractor
-from app.services.llm_provider import get_llm_provider
+from app.services.llm_provider import get_llm_provider, logger
 from app.services.markdown_parser import MarkdownParser
 from app.services.prose_fact_extractor import ProseFactExtractor
 from app.services.vault_scanner import VaultScanner
@@ -324,6 +324,9 @@ def list_documents(
             "file_modified_at": document.file_modified_at,
             "entities_linked": len(document.entities),
             "has_embedding": document.embedding is not None,
+            "needs_llm_processing": (
+                document.llm_facts_hash != document.content_hash
+            ),
         }
         for document in documents
     ]
@@ -387,6 +390,87 @@ def llm_status():
         "model": getattr(provider, "model", None),
         "anthropic_key_set": bool(settings.anthropic_api_key),
         "gemini_key_set": bool(settings.gemini_api_key),
+    }
+
+
+@app.post("/api/vault/extract-llm-facts")
+def extract_llm_facts_bulk(
+    force: bool = False,
+    db: Session = Depends(get_db),
+):
+    """
+    Incremental, whole-vault LLM fact extraction: runs
+    ProseFactExtractor on every document whose content has changed
+    since the LLM last successfully processed it (tracked via
+    Document.llm_facts_hash vs content_hash), skipping documents
+    that are already up to date. Pass force=true to reprocess
+    everything regardless (useful after a prompt change).
+
+    One document failing (bad LLM response, transient API error,
+    etc.) does not stop the batch -- each document gets its own
+    try/commit/rollback, and every failure is collected into
+    `failed` in the response instead of only showing up in server
+    logs. This is the direct answer to "how do I know where it
+    broke at 300 notes" -- you get a structured report back.
+
+    Runs the consistency engine once at the end, after every
+    document has been (re-)processed, rather than after each one --
+    much cheaper than re-running it per document.
+    """
+
+    provider = get_llm_provider(settings)
+
+    if provider is None:
+        return {
+            "error": (
+                "No LLM provider configured. Set ANTHROPIC_API_KEY "
+                "and/or GEMINI_API_KEY in your .env to enable LLM "
+                "fact extraction."
+            )
+        }
+
+    documents = db.scalars(select(Document)).all()
+    prose_extractor = ProseFactExtractor(db, provider)
+
+    to_process = [
+        document
+        for document in documents
+        if force or document.llm_facts_hash != document.content_hash
+    ]
+
+    processed = 0
+    failed: list[dict] = []
+
+    for document in to_process:
+        try:
+            prose_extractor.extract_from_document(document)
+            db.commit()
+            processed += 1
+        except Exception as exc:  # noqa: BLE001 -- deliberately broad,
+            # a single document's failure (bad LLM response, network
+            # blip, rate limit) must never abort the whole batch.
+            db.rollback()
+            failed.append({
+                "document_id": document.id,
+                "document": document.title,
+                "error": str(exc),
+            })
+            logger.warning(
+                "LLM extraction failed for document %r (id=%s): %s",
+                document.title, document.id, exc,
+            )
+
+    scanner = VaultScanner()
+    schema = VaultSchema(scanner.vault_path)
+    conflict_summary = ConsistencyEngine(db, schema=schema).run()
+    db.commit()
+
+    return {
+        "documents_total": len(documents),
+        "processed": processed,
+        "skipped_up_to_date": len(documents) - len(to_process),
+        "failed": failed,
+        "conflicts": conflict_summary,
     }
 
 

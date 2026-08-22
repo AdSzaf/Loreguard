@@ -32,6 +32,20 @@ class Fact(Base):
         nullable=True,
     )
 
+    # A number that accompanies object_entity_id/object_value,
+    # rather than replacing it -- e.g. "Elira miała 12 lat PODCZAS
+    # Bitwy pod Arven" is subject=Elira, predicate="wiek_podczas",
+    # object_entity_id=<Bitwa pod Arven>, object_number=12. Without
+    # this, an "age at event" claim has nowhere to put the number
+    # once the object slot is used to link the event. Nullable and
+    # unused by ordinary facts (rasa, panstwo, etc.) -- this is a
+    # deliberately general column, not age-specific, so future
+    # numeric facts (population, distance) can reuse it too.
+    object_number: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
     document_id: Mapped[int] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,

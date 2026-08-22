@@ -1,4 +1,5 @@
 import type {
+  BulkLlmExtractionResult,
   ConflictStatus,
   ConflictView,
   DashboardSummary,
@@ -53,6 +54,12 @@ export const api = {
   extractLlmFacts: (documentId: number) =>
     request<LlmExtractionResult>(
       `/api/documents/${documentId}/extract-llm-facts`,
+      { method: "POST" },
+    ),
+
+  extractLlmFactsBulk: (force = false) =>
+    request<BulkLlmExtractionResult>(
+      `/api/vault/extract-llm-facts?force=${force}`,
       { method: "POST" },
     ),
 

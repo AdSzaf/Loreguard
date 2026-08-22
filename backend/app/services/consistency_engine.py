@@ -6,7 +6,7 @@ from app.models import Conflict, ConflictStatus
 from app.rules.base import ConflictCandidate, Rule
 from app.rules.logical_rules import ExclusiveFactRule
 from app.rules.relationship_rules import RelationshipContradictionRule
-from app.rules.temporal_rules import EventDateRangeRule
+from app.rules.temporal_rules import AgeImpossibilityRule, EventDateRangeRule
 
 
 class ConsistencyEngine:
@@ -40,6 +40,7 @@ class ConsistencyEngine:
             if schema is not None:
                 self.rules.append(ExclusiveFactRule(schema))
                 self.rules.append(RelationshipContradictionRule(schema))
+                self.rules.append(AgeImpossibilityRule(schema))
 
     def run(self) -> dict:
         candidates: list[ConflictCandidate] = []

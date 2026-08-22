@@ -4,8 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.vault_schema import VaultSchema
-from app.models import ConflictSeverity, Event, Fact
+from app.models import ConflictSeverity, Fact
 from app.rules.base import ConflictCandidate, Rule
+from app.rules.temporal_utils import resolve_year_from_fact
 from app.services.event_extractor import DateParser
 
 
@@ -143,7 +144,7 @@ class ExclusiveFactRule(Rule):
         """
 
         if is_temporal:
-            year = self._resolve_year(db, fact)
+            year = resolve_year_from_fact(db, fact, self.date_parser)
 
             if year is not None:
                 if fact.object_entity_id is not None:
@@ -169,22 +170,3 @@ class ExclusiveFactRule(Rule):
         )
 
         return normalized_text, (fact.object_value or "?"), None
-
-    def _resolve_year(self, db: Session, fact: Fact) -> int | None:
-        if fact.object_entity_id is not None:
-            event = db.scalar(
-                select(Event).where(
-                    Event.entity_id == fact.object_entity_id
-                )
-            )
-
-            if event is not None and event.date_start_year is not None:
-                return event.date_start_year
-
-            return None
-
-        if fact.object_value:
-            year, _, _ = self.date_parser.parse(fact.object_value)
-            return year
-
-        return None

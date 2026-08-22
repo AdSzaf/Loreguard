@@ -33,6 +33,12 @@ class ProseFactExtractor:
       - idempotent per document: re-running replaces only this
         document's "llm_prose" facts, leaving frontmatter facts
         (owned by FactExtractor) untouched.
+      - marks document.llm_facts_hash = document.content_hash on
+        every successful pass (including "nothing to extract" for
+        an empty document), and leaves it untouched if the LLM call
+        raises. This is what lets a bulk/incremental run (see
+        main.py's POST /api/vault/extract-llm-facts) skip documents
+        that are already up to date and retry ones that failed.
     """
 
     def __init__(self, db: Session, provider: LLMProvider):
@@ -43,6 +49,11 @@ class ProseFactExtractor:
         text = (document.content or "").strip()
 
         if not text:
+            # Nothing to extract, but this *is* a completed, valid
+            # pass over the current content -- mark it processed so
+            # a bulk run doesn't keep retrying an empty document
+            # forever.
+            document.llm_facts_hash = document.content_hash
             return []
 
         known_entity_names = [
@@ -86,6 +97,7 @@ class ProseFactExtractor:
                 object_value=(
                     None if object_entity else candidate.object
                 ),
+                object_number=candidate.object_number,
                 document_id=document.id,
                 source_type="llm_prose",
                 confidence=max(0.0, min(1.0, candidate.confidence)),
@@ -94,6 +106,12 @@ class ProseFactExtractor:
 
             self.db.add(fact)
             facts.append(fact)
+
+        # Only reached if provider.extract_facts() didn't raise --
+        # an exception propagates past this line, so a failed
+        # extraction correctly leaves the hash stale/unset and gets
+        # retried on the next bulk run instead of being marked done.
+        document.llm_facts_hash = document.content_hash
 
         self.db.flush()
 

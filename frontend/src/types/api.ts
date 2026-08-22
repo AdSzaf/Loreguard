@@ -40,6 +40,7 @@ export interface DocumentSummary {
   file_modified_at: string;
   entities_linked: number;
   has_embedding?: boolean;
+  needs_llm_processing?: boolean;
 }
 
 export interface LlmStatus {
@@ -60,6 +61,19 @@ export interface LlmExtractionResult {
   document?: string;
   facts_extracted?: number;
   facts?: ExtractedFactView[];
+  conflicts?: {
+    candidates_found: number;
+    created: number;
+    skipped_existing: number;
+  };
+  error?: string;
+}
+
+export interface BulkLlmExtractionResult {
+  documents_total?: number;
+  processed?: number;
+  skipped_up_to_date?: number;
+  failed?: { document_id: number; document: string; error: string }[];
   conflicts?: {
     candidates_found: number;
     created: number;

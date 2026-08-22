@@ -22,6 +22,10 @@ class ExtractedFact:
     object: str
     confidence: float
     source_text: str
+    # Only set for facts that express a NUMBER at/about the object
+    # (e.g. "age at this event"), not for ordinary facts -- see
+    # Fact.object_number's docstring in app/models/fact.py.
+    object_number: float | None = None
 
 
 class LLMProvider:
@@ -76,6 +80,13 @@ Zasady:
   0.5-0.8 dla domyślnego ale jasnego, poniżej 0.5 dla niepewnego.
 - source_text to dokładny cytat (fragment zdania) z tekstu, na \
   podstawie którego wyciągnięto fakt.
+- SPECJALNY PRZYPADEK -- wiek w momencie wydarzenia: jeśli tekst \
+  mówi, że ktoś miał określony wiek PODCZAS jakiegoś wydarzenia \
+  (np. "mając zaledwie 12 lat, objęła dowództwo w bitwie X"), \
+  wypisz fakt z predicate="wiek_podczas", object = nazwa własna \
+  wydarzenia/bitwy/sytuacji (NIE liczba), oraz DODATKOWO pole \
+  "object_number" = sam wiek jako liczba (np. 12). Pole \
+  object_number pomijaj całkowicie dla wszystkich innych faktów.
 
 Przykłady:
 
@@ -90,12 +101,20 @@ roku w tym zdaniu, więc object to nazwa bitwy, NIE zgadujemy daty)
 "object": "Bitwa pod Soizon", "confidence": 0.9, \
 "source_text": "Zginął w niej Serigius I."}}
 
+3. Tekst: "W 842 roku Elira, mająca zaledwie 12 lat, objęła \
+dowództwo nad armią Valdoru w Bitwie pod Arven." (wiek podczas \
+wydarzenia -- użyj object_number)
+   -> {{"subject": "Elira", "predicate": "wiek_podczas", \
+"object": "Bitwa pod Arven", "object_number": 12, \
+"confidence": 0.9, "source_text": "mająca zaledwie 12 lat"}}
+
 Znane encje w tym świecie (subject/object powinny się do nich \
 odnosić, jeśli to możliwe): {known_entities}
 
 Odpowiedz WYŁĄCZNIE poprawnym JSON-em, bez markdown, bez komentarzy: \
 lista obiektów z kluczami: subject, predicate, object, confidence, \
-source_text. Jeśli nie ma żadnych faktów, zwróć [].
+source_text, oraz opcjonalnie object_number (tylko dla faktów typu \
+"wiek_podczas", patrz przykład 3). Jeśli nie ma żadnych faktów, zwróć [].
 """
 
 
@@ -159,6 +178,8 @@ def _parse_extracted_facts(raw_text: str) -> list[ExtractedFact]:
             continue
 
         try:
+            object_number_raw = item.get("object_number")
+
             facts.append(
                 ExtractedFact(
                     subject=str(item["subject"]).strip(),
@@ -166,6 +187,11 @@ def _parse_extracted_facts(raw_text: str) -> list[ExtractedFact]:
                     object=str(item["object"]).strip(),
                     confidence=float(item.get("confidence", 0.5)),
                     source_text=str(item.get("source_text", "")).strip(),
+                    object_number=(
+                        float(object_number_raw)
+                        if object_number_raw is not None
+                        else None
+                    ),
                 )
             )
         except (KeyError, TypeError, ValueError):

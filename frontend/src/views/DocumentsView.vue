@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { api, ApiError } from "../services/api";
-import type { DocumentSummary, LlmExtractionResult, LlmStatus } from "../types/api";
+import type {
+  BulkLlmExtractionResult,
+  DocumentSummary,
+  LlmExtractionResult,
+  LlmStatus,
+} from "../types/api";
 
 const documents = ref<DocumentSummary[]>([]);
 const loading = ref(true);
@@ -11,6 +16,9 @@ const llmStatus = ref<LlmStatus | null>(null);
 
 const extracting = reactive<Record<number, boolean>>({});
 const results = reactive<Record<number, LlmExtractionResult>>({});
+
+const bulkRunning = ref(false);
+const bulkResult = ref<BulkLlmExtractionResult | null>(null);
 
 async function load() {
   loading.value = true;
@@ -40,6 +48,23 @@ async function extract(doc: DocumentSummary) {
     };
   } finally {
     extracting[doc.id] = false;
+    await load();
+  }
+}
+
+async function runBulk(force: boolean) {
+  bulkRunning.value = true;
+  bulkResult.value = null;
+
+  try {
+    bulkResult.value = await api.extractLlmFactsBulk(force);
+  } catch (e) {
+    bulkResult.value = {
+      error: e instanceof ApiError ? e.message : "Przetwarzanie zbiorcze nie powiodło się.",
+    };
+  } finally {
+    bulkRunning.value = false;
+    await load();
   }
 }
 
@@ -52,7 +77,7 @@ onMounted(load);
       <div>
         <h1 class="page__title">Dokumenty</h1>
         <p class="page__subtitle">
-          Ekstrakcja faktów z prozy przez LLM — osobno dla każdego dokumentu.
+          Ekstrakcja faktów z prozy przez LLM — pojedynczo lub dla całego vault naraz.
         </p>
       </div>
 
@@ -65,6 +90,54 @@ onMounted(load);
       </div>
     </header>
 
+    <div class="bulk-panel">
+      <div class="bulk-panel__row">
+        <div>
+          <span class="bulk-panel__label">Przetwarzanie zbiorcze</span>
+          <p class="bulk-panel__hint">
+            Analizuje tylko dokumenty nowe/zmienione od ostatniego przebiegu LLM.
+            Jeden błąd nie przerywa reszty — dostaniesz raport co się nie udało.
+          </p>
+        </div>
+        <div class="bulk-panel__buttons">
+          <button
+            class="btn btn--primary"
+            :disabled="bulkRunning || !llmStatus?.active_provider"
+            @click="runBulk(false)"
+          >
+            {{ bulkRunning ? "Przetwarzam…" : "Przetwórz nowe/zmienione" }}
+          </button>
+          <button
+            class="btn"
+            :disabled="bulkRunning || !llmStatus?.active_provider"
+            title="Przetwarza WSZYSTKIE dokumenty od nowa, ignorując co już było zrobione"
+            @click="runBulk(true)"
+          >
+            Przetwórz wszystko od nowa
+          </button>
+        </div>
+      </div>
+
+      <div v-if="bulkResult" class="bulk-result">
+        <p v-if="bulkResult.error" class="banner banner--error">{{ bulkResult.error }}</p>
+        <template v-else>
+          <p class="bulk-result__summary">
+            Przetworzono: {{ bulkResult.processed }} ·
+            Pominięto (aktualne): {{ bulkResult.skipped_up_to_date }} ·
+            Błędy: {{ bulkResult.failed?.length ?? 0 }}
+            <template v-if="bulkResult.conflicts">
+              · Nowe konflikty: {{ bulkResult.conflicts.created }}
+            </template>
+          </p>
+          <ul v-if="bulkResult.failed?.length" class="bulk-errors">
+            <li v-for="f in bulkResult.failed" :key="f.document_id" class="bulk-errors__item">
+              <strong>{{ f.document }}</strong>: {{ f.error }}
+            </li>
+          </ul>
+        </template>
+      </div>
+    </div>
+
     <p v-if="error" class="banner banner--error">{{ error }}</p>
     <p v-else-if="loading" class="muted">Ładowanie…</p>
     <p v-else-if="documents.length === 0" class="muted">Brak dokumentów. Zsynchronizuj vault na Dashboardzie.</p>
@@ -73,7 +146,10 @@ onMounted(load);
       <li v-for="doc in documents" :key="doc.id" class="document-card">
         <div class="document-card__row">
           <div class="document-card__info">
-            <span class="document-card__title">{{ doc.title }}</span>
+            <span class="document-card__title">
+              {{ doc.title }}
+              <span v-if="doc.needs_llm_processing" class="pending-dot" title="Wymaga przetworzenia LLM" />
+            </span>
             <span class="document-card__path mono">{{ doc.path }}</span>
           </div>
 
@@ -166,6 +242,84 @@ onMounted(load);
 
 .llm-status--off .llm-status__dot {
   background: var(--severity-high);
+}
+
+.bulk-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+.bulk-panel__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bulk-panel__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bulk-panel__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+  max-width: 480px;
+}
+
+.bulk-panel__buttons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #14161d;
+}
+
+.bulk-result {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.bulk-result__summary {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.bulk-errors {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bulk-errors__item {
+  font-size: 12px;
+  color: var(--severity-high);
+  background: var(--severity-high-soft);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+}
+
+.pending-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 .banner {

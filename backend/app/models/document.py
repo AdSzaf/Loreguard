@@ -73,3 +73,13 @@ class Document(Base):
         DateTime,
         nullable=True,
     )
+
+    # content_hash the LLM prose extractor last successfully ran
+    # against. Compared to `content_hash` to decide, incrementally,
+    # which documents actually need (re-)processing -- None means
+    # "never processed". Set by ProseFactExtractor itself, not by
+    # the caller, so this invariant can't be forgotten at a call site.
+    llm_facts_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )

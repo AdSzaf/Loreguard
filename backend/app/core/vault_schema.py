@@ -96,6 +96,11 @@ DEFAULT_PREDICATE_SYNONYMS: dict[str, str] = {
     "died": "died", "death": "died", "dies": "died",
     "urodził się": "born", "urodziła się": "born", "narodziny": "born",
     "born": "born", "birth": "born",
+
+    # Age stated at a specific event (see EXTRACTION_SYSTEM_PROMPT's
+    # "wiek_podczas" example and AgeImpossibilityRule).
+    "wiek_podczas": "age_at_event", "wiek_w_trakcie": "age_at_event",
+    "age_at_event": "age_at_event", "age_during": "age_at_event",
 }
 
 # Named participant roles beyond the generic "participants" bucket.
