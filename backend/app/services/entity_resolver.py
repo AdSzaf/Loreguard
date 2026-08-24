@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.db_utils import ci_equals
 from app.core.vault_schema import VaultSchema
 from app.models import Document, Entity, EntityAlias, EntityType
 from app.services.entity_extractor import EntityCandidate
@@ -85,7 +86,7 @@ class EntityResolver:
     def _find_by_name(self, name: str) -> Entity | None:
         return self.db.scalar(
             select(Entity).where(
-                Entity.name.ilike(name)
+                ci_equals(Entity.name, name)
             )
         )
 
@@ -93,7 +94,7 @@ class EntityResolver:
         return self.db.scalar(
             select(Entity)
             .join(EntityAlias)
-            .where(EntityAlias.alias.ilike(alias))
+            .where(ci_equals(EntityAlias.alias, alias))
         )
 
     def _create_entity(self, name: str) -> Entity:

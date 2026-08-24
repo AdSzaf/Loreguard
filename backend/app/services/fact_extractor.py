@@ -1,8 +1,8 @@
-import re
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.db_utils import ci_equals
+from app.core.wikilinks import parse_wikilink
 from app.models import Document, Entity, EntityAlias, Fact
 from app.schemas.document import ParsedDocument
 from app.services.entity_extractor import EntityExtractor
@@ -17,10 +17,6 @@ class FactExtractor:
         "aliases",
         "tags",
     }
-
-    WIKILINK_PATTERN = re.compile(
-        r"\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]"
-    )
 
     def __init__(self, db: Session):
         self.db = db
@@ -98,7 +94,7 @@ class FactExtractor:
 
         entity = self.db.scalar(
             select(Entity).where(
-                Entity.name.ilike(document.title)
+                ci_equals(Entity.name, document.title)
             )
         )
 
@@ -109,7 +105,7 @@ class FactExtractor:
             select(Entity)
             .join(EntityAlias)
             .where(
-                EntityAlias.alias.ilike(document.title)
+                ci_equals(EntityAlias.alias, document.title)
             )
         )
 
@@ -118,18 +114,16 @@ class FactExtractor:
         value: str,
     ) -> Entity | None:
 
-        match = self.WIKILINK_PATTERN.fullmatch(
-            value.strip()
-        )
+        parsed = parse_wikilink(value)
 
-        if not match:
+        if parsed is None:
             return None
 
-        entity_name = match.group(1).strip()
+        entity_name, _display_name = parsed
 
         return self.db.scalar(
             select(Entity).where(
-                Entity.name.ilike(entity_name)
+                ci_equals(Entity.name, entity_name)
             )
         )
 

@@ -1,5 +1,6 @@
-import re
 from dataclasses import dataclass
+
+from app.core.wikilinks import iter_wikilinks
 
 
 @dataclass
@@ -10,10 +11,6 @@ class EntityCandidate:
 
 
 class EntityExtractor:
-    WIKILINK_PATTERN = re.compile(
-        r"\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]"
-    )
-
     def extract_from_content(
         self,
         content: str,
@@ -21,13 +18,7 @@ class EntityExtractor:
         candidates: list[EntityCandidate] = []
         seen: set[str] = set()
 
-        for match in self.WIKILINK_PATTERN.finditer(content):
-            target = match.group(1).strip()
-            display_name = match.group(2)
-
-            if display_name:
-                display_name = display_name.strip()
-
+        for target, display_name in iter_wikilinks(content):
             normalized_name = target.casefold()
 
             if normalized_name in seen:

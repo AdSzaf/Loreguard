@@ -167,16 +167,33 @@ def main():
     # to be the subject entity's own page by matching name/alias
     # (mirrors what a duplicate/legend-vs-history article would look
     # like once prose extraction attaches facts to the same entity).
+    #
+    # Uses "umarł" (canonicalizes to "died"), one of the small
+    # default set of predicates ExclusiveFactRule actually treats
+    # as single-valued -- "rasa" deliberately is NOT anymore (see
+    # DEFAULT_EXCLUSIVE_PREDICATES's docstring): most descriptive
+    # predicates are legitimately multi-valued, only a few (died,
+    # born, capital) genuinely have one correct answer.
     aldren_entity = next(
         e for e in doc_a.entities if e.name == "Aldren II"
     )
 
     from app.models import Fact
 
+    db.add(
+        Fact(
+            subject_entity_id=aldren_entity.id,
+            predicate="umarł",
+            object_value="842",
+            document_id=doc_a.id,
+        )
+    )
+    db.commit()
+
     conflicting_fact = Fact(
         subject_entity_id=aldren_entity.id,
-        predicate="rasa",
-        object_value="Elf",
+        predicate="zmarł",
+        object_value="857",
         document_id=doc_a.id,
     )
     db.add(conflicting_fact)
@@ -186,8 +203,13 @@ def main():
     db.commit()
 
     check(
-        "conflicting 'rasa' values detected as a new conflict",
+        "conflicting death years detected as a new conflict",
         result_2["created"] == 1,
+    )
+
+    check(
+        "'rasa' conflicts are NOT auto-flagged anymore (not exclusive by default)",
+        result_2["candidates_found"] == 1,
     )
 
     conflict = db.query(Conflict).filter(

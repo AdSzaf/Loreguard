@@ -101,6 +101,31 @@ DEFAULT_PREDICATE_SYNONYMS: dict[str, str] = {
     # "wiek_podczas" example and AgeImpossibilityRule).
     "wiek_podczas": "age_at_event", "wiek_w_trakcie": "age_at_event",
     "age_at_event": "age_at_event", "age_during": "age_at_event",
+
+    "stolica": "capital", "capital": "capital",
+}
+
+# ExclusiveFactRule only compares facts for canonical predicates in
+# this set -- everything else is treated as legitimately
+# multi-valued by default (a deity can have several domains, a
+# person can be challenged to a duel by several rivals, a title and
+# a description aren't "competing" values for the same question).
+#
+# This is deliberately a SHORT, conservative default list. Getting
+# this wrong in the "too permissive" direction produces constant
+# false positives on ordinary descriptive prose (this is exactly
+# what happened before this list existed -- every deity's "tytuł"
+# vs "domena" got flagged as if they contradicted each other).
+DEFAULT_EXCLUSIVE_PREDICATES: set[str] = {"died", "born", "capital"}
+
+# Predicates that are exclusive in general, but NOT for specific
+# entity types where multiplicity is normal in-universe, not a
+# contradiction. Currently: deities in settings with reincarnation
+# can legitimately have more than one born/died fact (each cycle).
+# canonical predicate -> set of EntityTypes exempted from exclusivity.
+DEFAULT_EXCLUSIVITY_EXEMPT_TYPES: dict[str, set[EntityType]] = {
+    "died": {EntityType.DEITY},
+    "born": {EntityType.DEITY},
 }
 
 # Named participant roles beyond the generic "participants" bucket.
@@ -140,6 +165,13 @@ class VaultSchema:
 
         event_tags:
           - starcie
+
+        exclusive_predicates:
+          - stolica
+
+        exclusivity_exempt:
+          died: [deity]
+          born: [deity]
     """
 
     def __init__(self, vault_path: Path | str):
@@ -164,6 +196,15 @@ class VaultSchema:
         self._predicate_synonyms: dict[str, str] = {
             term.casefold(): canonical
             for term, canonical in DEFAULT_PREDICATE_SYNONYMS.items()
+        }
+
+        self._exclusive_predicates: set[str] = set(
+            DEFAULT_EXCLUSIVE_PREDICATES
+        )
+
+        self._exclusivity_exempt_types: dict[str, set[EntityType]] = {
+            predicate: set(types)
+            for predicate, types in DEFAULT_EXCLUSIVITY_EXEMPT_TYPES.items()
         }
 
         self._event_tags: set[str] = {
@@ -219,6 +260,28 @@ class VaultSchema:
             self._relationship_groups.append(
                 {str(item).strip().casefold() for item in group}
             )
+
+        for predicate in (data.get("exclusive_predicates") or []):
+            self._exclusive_predicates.add(str(predicate).strip().casefold())
+
+        for predicate, type_names in (
+            data.get("exclusivity_exempt") or {}
+        ).items():
+            resolved_types: set[EntityType] = set()
+
+            for type_name in type_names:
+                try:
+                    resolved_types.add(
+                        EntityType(str(type_name).strip().lower())
+                    )
+                except ValueError:
+                    continue
+
+            if resolved_types:
+                key = str(predicate).strip().casefold()
+                self._exclusivity_exempt_types.setdefault(
+                    key, set()
+                ).update(resolved_types)
 
     def resolve_entity_type(
         self,
@@ -284,6 +347,34 @@ class VaultSchema:
 
         key = predicate.strip().casefold()
         return self._predicate_synonyms.get(key, key)
+
+    def is_exclusive_predicate(
+        self,
+        canonical_predicate: str,
+        entity_type: EntityType | None = None,
+    ) -> bool:
+        """
+        Whether ExclusiveFactRule should treat this (already
+        canonicalized) predicate as single-valued for the given
+        entity type. False means "multiple values are normal, not
+        a contradiction" -- the default for anything not explicitly
+        listed, since most descriptive predicates in a lore wiki
+        (titles, domains, epithets, rivals) are naturally
+        multi-valued. See DEFAULT_EXCLUSIVE_PREDICATES's docstring.
+        """
+
+        key = canonical_predicate.strip().casefold()
+
+        if key not in self._exclusive_predicates:
+            return False
+
+        if entity_type is not None:
+            exempt_types = self._exclusivity_exempt_types.get(key, set())
+
+            if entity_type in exempt_types:
+                return False
+
+        return True
 
     def get_role_fields(self) -> dict[str, list[str]]:
         return self._role_fields

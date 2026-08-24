@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.db_utils import ci_equals
 from app.models import Document, Entity, EntityAlias, Fact
 from app.services.llm_provider import LLMProvider, logger
 
@@ -122,7 +123,7 @@ class ProseFactExtractor:
             return None
 
         entity = self.db.scalar(
-            select(Entity).where(Entity.name.ilike(name))
+            select(Entity).where(ci_equals(Entity.name, name))
         )
 
         if entity is not None:
@@ -131,5 +132,5 @@ class ProseFactExtractor:
         return self.db.scalar(
             select(Entity)
             .join(EntityAlias)
-            .where(EntityAlias.alias.ilike(name))
+            .where(ci_equals(EntityAlias.alias, name))
         )

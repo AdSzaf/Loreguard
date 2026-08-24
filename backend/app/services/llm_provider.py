@@ -57,6 +57,12 @@ Zasady:
 - predicate pisz krótko, w języku tekstu źródłowego, w formie \
   bezokolicznikowej/rzeczownikowej (np. "zmarł", "urodził się", \
   "był ojcem", nie pełnym zdaniem).
+- UNIKAJ generycznego "być"/"jest" jako predykatu dla zdań \
+  opisowych typu "X, Tytuł, Opis roli" (np. "Lunaris, Księżycowa \
+  Dama, Bogini księżyca"). Takie zdanie to DWA osobne fakty, nie \
+  jeden: użyj konkretnych predykatów jak "tytuł" i "domena"/"rola" \
+  zamiast wrzucać oba pod "jest" -- inaczej wyglądają jak sprzeczne \
+  odpowiedzi na to samo pytanie, a nie są.
 - Jeśli fakt dotyczy daty/roku, umieść samą liczbę/opis daty w polu \
   "object" (np. "842", "wiosna 842"), a nie całe zdanie. Jeśli tekst \
   NIE podaje daty wprost (np. mówi tylko "zginął w tej bitwie" bez \

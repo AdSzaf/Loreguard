@@ -3,7 +3,9 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.db_utils import ci_equals
 from app.core.vault_schema import VaultSchema
+from app.core.wikilinks import parse_wikilink
 from app.models import (
     Document,
     Entity,
@@ -152,10 +154,6 @@ class EventExtractor:
     parsed deterministically from frontmatter the author wrote.
     """
 
-    WIKILINK_PATTERN = re.compile(
-        r"\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]"
-    )
-
     def __init__(self, db: Session, schema: VaultSchema):
         self.db = db
         self.schema = schema
@@ -172,7 +170,7 @@ class EventExtractor:
             return None
 
         entity = self.db.scalar(
-            select(Entity).where(Entity.name.ilike(document.title))
+            select(Entity).where(ci_equals(Entity.name, document.title))
         )
 
         if entity is None:
@@ -286,14 +284,15 @@ class EventExtractor:
             return None
 
         return self.db.scalar(
-            select(Entity).where(Entity.name.ilike(name))
+            select(Entity).where(ci_equals(Entity.name, name))
         )
 
-    def _strip_wikilink(self, value: str) -> str:
-        match = self.WIKILINK_PATTERN.fullmatch(value.strip())
+    @staticmethod
+    def _strip_wikilink(value: str) -> str:
+        parsed = parse_wikilink(value)
 
-        if match:
-            return match.group(1).strip()
+        if parsed:
+            return parsed[0]
 
         return value.strip()
 

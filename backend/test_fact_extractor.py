@@ -1,18 +1,12 @@
-import os
 from pathlib import Path
-from dotenv import load_dotenv
 
 from app.core.database import SessionLocal
 from app.models import Document, Entity, Fact
 from app.services.fact_extractor import FactExtractor
 from app.services.markdown_parser import MarkdownParser
 
-load_dotenv()
-vault_path_env = os.getenv("OBSIDIAN_VAULT_PATH")
-if vault_path_env:
-    VAULT_PATH = Path(vault_path_env)
-else:
-    raise ValueError("Brak zmiennej OBSIDIAN_VAULT_PATH w pliku .env")
+
+VAULT_PATH = Path(r"D:\Gry\Refica\Refica_Obs")
 
 
 def main():

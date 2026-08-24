@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
+from app.core.db_utils import ci_equals
 from app.core.vault_schema import VaultSchema
 from app.models import Conflict, ConflictStatus, Document, Entity, Event, Fact
 from app.services.consistency_engine import ConsistencyEngine
@@ -636,7 +637,7 @@ def list_facts(
         query = query.where(Fact.subject_entity_id == entity_id)
 
     if predicate is not None:
-        query = query.where(Fact.predicate.ilike(predicate))
+        query = query.where(ci_equals(Fact.predicate, predicate))
 
     facts = db.scalars(query).all()
 

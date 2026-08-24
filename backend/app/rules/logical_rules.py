@@ -20,17 +20,38 @@ TEMPORAL_PREDICATES = {"died", "born"}
 
 class ExclusiveFactRule(Rule):
     """
-    A subject shouldn't have two different values recorded for the
-    same predicate -- e.g. two different `rasa` for one character,
-    or two different death years for one person.
+    Some predicates only have one correct value for a given subject
+    -- a person dies once, a kingdom has one capital at a time. For
+    those, two different Facts with the same canonical predicate
+    but different values are a real contradiction worth flagging.
+
+    Crucially, this is NOT true of most predicates in a lore wiki.
+    A deity can have several domains ("bóg żeglugi i astronomii"),
+    several epithets, several titles; a person can be challenged to
+    a duel by several rivals. Treating every predicate as
+    single-valued by default produces constant false positives on
+    completely ordinary descriptive prose (a title and a domain
+    description aren't "competing" answers to the same question).
+
+    So this rule only compares predicates in
+    VaultSchema.is_exclusive_predicate()'s allowlist (default:
+    died/born/capital, extendable via .loreguard/schema.yaml).
+    Everything else is skipped entirely -- silently treated as
+    legitimately multi-valued, never flagged.
 
     This is the generic mechanism behind plan section 23's
     "character_single_death" / "kingdom_single_capital" idea. It
-    doesn't special-case any predicate name -- instead, predicates
-    are grouped by VaultSchema.canonicalize_predicate() first, so
-    "zginął" (from one article) and "umarł" (from another) are
-    compared as the same underlying concept even though an LLM (or
-    two different authors) used different words for it.
+    doesn't special-case any predicate's exact wording -- instead,
+    predicates are grouped by VaultSchema.canonicalize_predicate()
+    first, so "zginął" (from one article) and "umarł" (from
+    another) are compared as the same underlying concept even
+    though an LLM (or two different authors) used different words
+    for it.
+
+    Some entity types are exempt from exclusivity for specific
+    predicates -- e.g. deities in settings with reincarnation can
+    legitimately have more than one born/died fact across cycles
+    (see VaultSchema's exclusivity_exempt).
 
     Grounding temporal facts against Event dates
     ---------------------------------------------
@@ -79,6 +100,15 @@ class ExclusiveFactRule(Rule):
         candidates: list[ConflictCandidate] = []
 
         for (entity_id, canonical_predicate), group in grouped.items():
+            subject_entity_type = (
+                group[0].subject.entity_type if group[0].subject else None
+            )
+
+            if not self.schema.is_exclusive_predicate(
+                canonical_predicate, subject_entity_type
+            ):
+                continue
+
             is_temporal = canonical_predicate in TEMPORAL_PREDICATES
 
             resolved = {
