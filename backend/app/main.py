@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi import Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -312,25 +312,111 @@ def resolve_conflict(
 
 @app.get("/api/documents")
 def list_documents(
+    page: int = 1,
+    page_size: int = 25,
     db: Session = Depends(get_db),
 ):
-    documents = db.scalars(select(Document)).all()
+    """
+    Paginated, alphabetically sorted (by title, case-insensitive).
+    Note: /api/vault/sync and /api/vault/extract-llm-facts query
+    ALL documents directly, bypassing this endpoint entirely --
+    pagination here is purely a listing/UI concern and never limits
+    what sync or bulk LLM processing actually covers.
+    """
 
-    return [
-        {
-            "id": document.id,
-            "title": document.title,
-            "path": document.path,
-            "indexed_at": document.indexed_at,
-            "file_modified_at": document.file_modified_at,
-            "entities_linked": len(document.entities),
-            "has_embedding": document.embedding is not None,
-            "needs_llm_processing": (
-                document.llm_facts_hash != document.content_hash
-            ),
-        }
-        for document in documents
-    ]
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+
+    total = db.scalar(select(func.count()).select_from(Document)) or 0
+
+    documents = db.scalars(
+        select(Document)
+        .order_by(func.lower(Document.title))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    return {
+        "items": [
+            {
+                "id": document.id,
+                "title": document.title,
+                "path": document.path,
+                "indexed_at": document.indexed_at,
+                "file_modified_at": document.file_modified_at,
+                "entities_linked": len(document.entities),
+                "has_embedding": document.embedding is not None,
+                "needs_llm_processing": (
+                    document.llm_facts_hash != document.content_hash
+                ),
+            }
+            for document in documents
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if total else 0,
+    }
+
+
+@app.get("/api/documents/{document_id}")
+def get_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Full detail for one document: its facts (frontmatter + LLM
+    prose, distinguished by source_type) and linked entities --
+    the data behind DocumentDetailView, and a natural place to
+    trigger LLM extraction from too (same endpoint the list view
+    already uses).
+    """
+
+    document = db.get(Document, document_id)
+
+    if document is None:
+        return {"error": "Document not found"}
+
+    facts = db.scalars(
+        select(Fact).where(Fact.document_id == document_id)
+    ).all()
+
+    return {
+        "id": document.id,
+        "title": document.title,
+        "path": document.path,
+        "indexed_at": document.indexed_at,
+        "file_modified_at": document.file_modified_at,
+        "has_embedding": document.embedding is not None,
+        "needs_llm_processing": (
+            document.llm_facts_hash != document.content_hash
+        ),
+        "entities": [
+            {
+                "id": entity.id,
+                "name": entity.name,
+                "entity_type": entity.entity_type,
+            }
+            for entity in document.entities
+        ],
+        "facts": [
+            {
+                "id": fact.id,
+                "subject": fact.subject.name,
+                "predicate": fact.predicate,
+                "value": (
+                    fact.object_entity.name
+                    if fact.object_entity_id is not None
+                    and fact.object_entity
+                    else fact.object_value
+                ),
+                "source_type": fact.source_type,
+                "confidence": fact.confidence,
+                "source_text": fact.source_text,
+            }
+            for fact in facts
+        ],
+    }
 
 
 @app.get("/api/documents/{document_id}/similar")
@@ -549,25 +635,45 @@ def extract_llm_facts(
 @app.get("/api/entities")
 def list_entities(
     entity_type: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: Session = Depends(get_db),
 ):
-    query = select(Entity)
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+
+    base_query = select(Entity)
+    count_query = select(func.count()).select_from(Entity)
 
     if entity_type:
-        query = query.where(Entity.entity_type == entity_type)
+        base_query = base_query.where(Entity.entity_type == entity_type)
+        count_query = count_query.where(Entity.entity_type == entity_type)
 
-    entities = db.scalars(query).all()
+    total = db.scalar(count_query) or 0
 
-    return [
-        {
-            "id": entity.id,
-            "name": entity.name,
-            "entity_type": entity.entity_type,
-            "aliases": [alias.alias for alias in entity.aliases],
-            "documents": len(entity.documents),
-        }
-        for entity in entities
-    ]
+    entities = db.scalars(
+        base_query
+        .order_by(func.lower(Entity.name))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    return {
+        "items": [
+            {
+                "id": entity.id,
+                "name": entity.name,
+                "entity_type": entity.entity_type,
+                "aliases": [alias.alias for alias in entity.aliases],
+                "documents": len(entity.documents),
+            }
+            for entity in entities
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if total else 0,
+    }
 
 
 @app.get("/api/entities/{entity_id}")

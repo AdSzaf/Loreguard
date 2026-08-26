@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import { api, ApiError } from "../services/api";
 import type {
   BulkLlmExtractionResult,
@@ -7,8 +8,14 @@ import type {
   LlmExtractionResult,
   LlmStatus,
 } from "../types/api";
+import Pagination from "../components/Pagination.vue";
+
+const PAGE_SIZE = 25;
 
 const documents = ref<DocumentSummary[]>([]);
+const page = ref(1);
+const totalPages = ref(0);
+const total = ref(0);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
@@ -25,15 +32,24 @@ async function load() {
   error.value = null;
 
   try {
-    [documents.value, llmStatus.value] = await Promise.all([
-      api.documents(),
+    const [docsPage, status] = await Promise.all([
+      api.documents(page.value, PAGE_SIZE),
       api.llmStatus(),
     ]);
+    documents.value = docsPage.items;
+    totalPages.value = docsPage.total_pages;
+    total.value = docsPage.total;
+    llmStatus.value = status;
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : "Nie udało się pobrać dokumentów.";
   } finally {
     loading.value = false;
   }
+}
+
+function changePage(newPage: number) {
+  page.value = newPage;
+  load();
 }
 
 async function extract(doc: DocumentSummary) {
@@ -57,6 +73,10 @@ async function runBulk(force: boolean) {
   bulkResult.value = null;
 
   try {
+    // Bulk processing always covers every document in the vault,
+    // regardless of which page is currently shown -- pagination is
+    // purely a listing concern (see the /api/vault/extract-llm-facts
+    // docstring on the backend).
     bulkResult.value = await api.extractLlmFactsBulk(force);
   } catch (e) {
     bulkResult.value = {
@@ -146,10 +166,10 @@ onMounted(load);
       <li v-for="doc in documents" :key="doc.id" class="document-card">
         <div class="document-card__row">
           <div class="document-card__info">
-            <span class="document-card__title">
+            <RouterLink :to="`/documents/${doc.id}`" class="document-card__title">
               {{ doc.title }}
               <span v-if="doc.needs_llm_processing" class="pending-dot" title="Wymaga przetworzenia LLM" />
-            </span>
+            </RouterLink>
             <span class="document-card__path mono">{{ doc.path }}</span>
           </div>
 
@@ -191,6 +211,8 @@ onMounted(load);
         </div>
       </li>
     </ul>
+
+    <Pagination :page="page" :total-pages="totalPages" :total="total" @change="changePage" />
   </div>
 </template>
 
@@ -372,6 +394,12 @@ onMounted(load);
 .document-card__title {
   font-weight: 600;
   font-size: 14px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.document-card__title:hover {
+  color: var(--accent-strong);
 }
 
 .document-card__path {

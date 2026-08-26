@@ -3,8 +3,14 @@ import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { api, ApiError } from "../services/api";
 import type { EntitySummary, EntityType } from "../types/api";
+import Pagination from "../components/Pagination.vue";
+
+const PAGE_SIZE = 25;
 
 const entities = ref<EntitySummary[]>([]);
+const page = ref(1);
+const totalPages = ref(0);
+const total = ref(0);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const typeFilter = ref<EntityType | "all">("all");
@@ -29,14 +35,29 @@ async function load() {
   error.value = null;
 
   try {
-    entities.value = await api.entities(
+    const result = await api.entities(
       typeFilter.value === "all" ? undefined : typeFilter.value,
+      page.value,
+      PAGE_SIZE,
     );
+    entities.value = result.items;
+    totalPages.value = result.total_pages;
+    total.value = result.total;
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : "Nie udało się pobrać encji.";
   } finally {
     loading.value = false;
   }
+}
+
+function onFilterChange() {
+  page.value = 1;
+  load();
+}
+
+function changePage(newPage: number) {
+  page.value = newPage;
+  load();
 }
 
 onMounted(load);
@@ -48,7 +69,7 @@ onMounted(load);
       <h1 class="page__title">Encje</h1>
     </header>
 
-    <select v-model="typeFilter" class="select" @change="load">
+    <select v-model="typeFilter" class="select" @change="onFilterChange">
       <option value="all">Wszystkie typy</option>
       <option v-for="(label, value) in TYPE_LABELS" :key="value" :value="value">
         {{ label }}
@@ -67,6 +88,8 @@ onMounted(load);
         </RouterLink>
       </li>
     </ul>
+
+    <Pagination :page="page" :total-pages="totalPages" :total="total" @change="changePage" />
   </div>
 </template>
 

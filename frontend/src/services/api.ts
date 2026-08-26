@@ -3,6 +3,7 @@ import type {
   ConflictStatus,
   ConflictView,
   DashboardSummary,
+  DocumentDetail,
   DocumentSummary,
   EntityDetail,
   EntitySummary,
@@ -10,6 +11,7 @@ import type {
   FactView,
   LlmExtractionResult,
   LlmStatus,
+  Paginated,
   SyncResult,
 } from "../types/api";
 
@@ -28,6 +30,7 @@ class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
     ...init,
   });
 
@@ -47,7 +50,12 @@ export const api = {
 
   syncVault: () => request<SyncResult>("/api/vault/sync", { method: "POST" }),
 
-  documents: () => request<DocumentSummary[]>("/api/documents"),
+  documents: (page = 1, pageSize = 25) =>
+    request<Paginated<DocumentSummary>>(
+      `/api/documents?page=${page}&page_size=${pageSize}`,
+    ),
+
+  document: (id: number) => request<DocumentDetail>(`/api/documents/${id}`),
 
   llmStatus: () => request<LlmStatus>("/api/llm/status"),
 
@@ -63,10 +71,14 @@ export const api = {
       { method: "POST" },
     ),
 
-  entities: (entityType?: string) =>
-    request<EntitySummary[]>(
-      `/api/entities${entityType ? `?entity_type=${encodeURIComponent(entityType)}` : ""}`,
-    ),
+  entities: (entityType?: string, page = 1, pageSize = 25) => {
+    const query = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    if (entityType) query.set("entity_type", entityType);
+    return request<Paginated<EntitySummary>>(`/api/entities?${query}`);
+  },
 
   entity: (id: number) => request<EntityDetail>(`/api/entities/${id}`),
 

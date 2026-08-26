@@ -16,6 +16,14 @@ export type ConflictStatus = "open" | "confirmed" | "dismissed" | "explained";
 export type ConflictSeverity = "low" | "medium" | "high";
 export type DatePrecision = "day" | "month" | "year" | "approximate" | "unknown";
 
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export interface DashboardSummary {
   documents: number;
   entities: number;
@@ -41,6 +49,28 @@ export interface DocumentSummary {
   entities_linked: number;
   has_embedding?: boolean;
   needs_llm_processing?: boolean;
+}
+
+export interface DocumentFactView {
+  id: number;
+  subject: string;
+  predicate: string;
+  value: string | null;
+  source_type: "frontmatter" | "llm_prose";
+  confidence: number;
+  source_text: string | null;
+}
+
+export interface DocumentDetail {
+  id: number;
+  title: string;
+  path: string;
+  indexed_at: string | null;
+  file_modified_at: string;
+  has_embedding: boolean;
+  needs_llm_processing: boolean;
+  entities: { id: number; name: string; entity_type: EntityType }[];
+  facts: DocumentFactView[];
 }
 
 export interface LlmStatus {
