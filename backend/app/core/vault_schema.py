@@ -1,3 +1,5 @@
+import re
+
 from pathlib import Path
 
 import yaml
@@ -72,14 +74,29 @@ DEFAULT_FIELD_ALIASES: dict[str, list[str]] = {
 # be true about the same two entities). Predicates within the same
 # group are treated as compatible/synonymous, not conflicting.
 DEFAULT_RELATIONSHIP_GROUPS: list[list[str]] = [
-    ["ojciec", "matka", "rodzic", "father", "mother", "parent"],
-    ["syn", "córka", "corka", "dziecko", "son", "daughter", "child"],
     [
-        "brat", "siostra", "rodzeństwo", "rodzenstwo",
+        "ojciec", "ojca", "ojcu", "ojcem", "ojcze",
+        "matka", "matki", "matce", "matkę", "matką",
+        "rodzic", "rodzica", "rodzicowi", "rodzicem",
+        "father", "mother", "parent",
+    ],
+    [
+        "syn", "syna", "synowi", "synem",
+        "córka", "córki", "córce", "córkę", "córką", "corka",
+        "dziecko", "dziecka", "dziecku", "dzieckiem",
+        "son", "daughter", "child",
+    ],
+    [
+        "brat", "brata", "bratu", "bratem", "bracie",
+        "siostra", "siostry", "siostrze", "siostrę", "siostrą",
+        "rodzeństwo", "rodzeństwa", "rodzeństwu", "rodzeństwem",
+        "rodzenstwo",
         "brother", "sister", "sibling",
     ],
     [
-        "mąż", "maz", "żona", "zona", "małżonek", "malzonek",
+        "mąż", "męża", "mężowi", "mężem", "maz",
+        "żona", "żony", "żonie", "żonę", "żoną", "zona",
+        "małżonek", "małżonka", "małżonkowi", "małżonkiem", "malzonek",
         "husband", "wife", "spouse",
     ],
 ]
@@ -391,12 +408,26 @@ class VaultSchema:
         predicate belongs to, or None if the predicate isn't a
         known relationship term (e.g. "rasa" isn't relational, so
         it's never compared by RelationshipContradictionRule).
+
+        Matches by SUBSTRING for words of 5+ characters (already-
+        inflected forms like "córką"/"siostrą" are listed
+        explicitly, so this mainly catches suffixes not enumerated),
+        but by WHOLE WORD for shorter words (<5 chars, e.g. "syn",
+        "brat") -- plain substring matching on short words produces
+        real false positives ("syn" inside "synchronizacja", "brat"
+        inside "zbratanie"). This is still an approximation, not
+        full Polish morphological analysis -- residual edge cases
+        are possible, but this removes the most likely collisions.
         """
 
         key = predicate.strip().casefold()
 
         for index, group in enumerate(self._relationship_groups):
-            if key in group:
-                return index
+            for word in group:
+                if len(word) < 5:
+                    if re.search(rf"\b{re.escape(word)}\b", key):
+                        return index
+                elif word in key:
+                    return index
 
         return None

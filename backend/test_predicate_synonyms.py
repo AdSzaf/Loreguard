@@ -18,7 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
 from app.core.vault_schema import VaultSchema
-from app.models import Conflict, Document, Entity, EntityType
+from app.models import Conflict, Document, Entity, EntityType, Fact
 from app.services.consistency_engine import ConsistencyEngine
 from app.services.llm_provider import ExtractedFact, LLMProvider
 from app.services.prose_fact_extractor import ProseFactExtractor
@@ -314,6 +314,71 @@ def main():
         and "zmarła" in conflict_2.explanation,
     )
     print(f"  explanation: {conflict_2.explanation}")
+
+    print()
+    print("=" * 60)
+    print("CASE 4: relationship_group_of matches natural LLM phrasing")
+    print("           (real-world bug: 'jest córką' vs 'była siostrą'")
+    print("           of the same pair went undetected before this fix)")
+    print("=" * 60)
+
+    check(
+        "'jest córką' matches the child group (same as bare 'córka')",
+        schema.relationship_group_of("jest córką") == schema.relationship_group_of("córka"),
+    )
+    check(
+        "'była siostrą' matches the sibling group (same as bare 'siostra')",
+        schema.relationship_group_of("była siostrą") == schema.relationship_group_of("siostra"),
+    )
+    check(
+        "the two phrasings land in DIFFERENT groups (a real contradiction)",
+        schema.relationship_group_of("jest córką")
+        != schema.relationship_group_of("była siostrą"),
+    )
+
+    kasandra = Entity(name="Kasandra Testowa", entity_type=EntityType.PERSON)
+    torvin = Entity(name="Torvin Testowy", entity_type=EntityType.PERSON)
+    db.add_all([kasandra, torvin])
+    db.flush()
+
+    kasandra_doc = Document(
+        title="Kasandra Testowa", path="Kasandra.md", content="",
+        content_hash="kasandra-1", file_modified_at=now,
+    )
+    kronika_doc = Document(
+        title="Kronika Rodzinna Testlandii", path="Kronika.md", content="",
+        content_hash="kronika-1", file_modified_at=now,
+    )
+    db.add_all([kasandra_doc, kronika_doc])
+    db.commit()
+
+    db.add(Fact(
+        subject_entity_id=kasandra.id, predicate="jest córką",
+        object_entity_id=torvin.id, document_id=kasandra_doc.id,
+        source_type="llm_prose",
+    ))
+    db.add(Fact(
+        subject_entity_id=kasandra.id, predicate="była siostrą",
+        object_entity_id=torvin.id, document_id=kronika_doc.id,
+        source_type="llm_prose",
+    ))
+    db.commit()
+
+    result_4 = ConsistencyEngine(db, schema=schema).run()
+    db.commit()
+
+    relationship_conflict_2 = db.query(Conflict).filter(
+        Conflict.rule_name == "relationship_contradiction",
+        Conflict.entity_id == kasandra.id,
+    ).first()
+
+    check(
+        "'jest córką' vs 'była siostrą' of the same pair now flagged",
+        relationship_conflict_2 is not None,
+    )
+
+    if relationship_conflict_2:
+        print(f"  explanation: {relationship_conflict_2.explanation}")
 
     print()
     print("=" * 60)
