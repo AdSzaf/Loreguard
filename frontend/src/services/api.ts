@@ -1,5 +1,6 @@
 import type {
   BulkLlmExtractionResult,
+  BulkSemanticCheckResult,
   ConflictStatus,
   ConflictView,
   DashboardSummary,
@@ -12,6 +13,7 @@ import type {
   LlmExtractionResult,
   LlmStatus,
   Paginated,
+  SemanticCheckResult,
   SyncResult,
 } from "../types/api";
 
@@ -68,6 +70,18 @@ export const api = {
   extractLlmFactsBulk: (force = false) =>
     request<BulkLlmExtractionResult>(
       `/api/vault/extract-llm-facts?force=${force}`,
+      { method: "POST" },
+    ),
+
+  checkSemanticConflicts: (documentId: number) =>
+    request<SemanticCheckResult>(
+      `/api/documents/${documentId}/check-semantic-conflicts`,
+      { method: "POST" },
+    ),
+
+  checkSemanticConflictsBulk: (force = false) =>
+    request<BulkSemanticCheckResult>(
+      `/api/vault/check-semantic-conflicts?force=${force}`,
       { method: "POST" },
     ),
 

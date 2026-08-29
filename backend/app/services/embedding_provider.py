@@ -63,3 +63,64 @@ class HashingEmbeddingProvider(EmbeddingProvider):
     def _sign(self, token: str) -> float:
         digest = hashlib.sha256((token + ":sign").encode("utf-8")).hexdigest()
         return 1.0 if int(digest, 16) % 2 == 0 else -1.0
+
+
+class GeminiEmbeddingProvider(EmbeddingProvider):
+    """
+    Real semantic embeddings via Google's Gemini Embedding API
+    (gemini-embedding-001). Unlike HashingEmbeddingProvider, this
+    actually understands meaning -- "bogini księżyca" and "lunar
+    deity" score high similarity here, whereas the hashing provider
+    would see them as completely unrelated (zero shared vocabulary).
+
+    Uses Matryoshka Representation Learning (MRL) to request a
+    smaller-than-default output size (768 instead of the 3072
+    default) -- plenty of resolution for document-similarity search
+    at this vault's scale, at a quarter of the storage/compute cost.
+    """
+
+    dimensions = 768
+
+    def __init__(self, api_key: str, model: str = "gemini-embedding-001"):
+        # Imported lazily so the `google-genai` package is only
+        # required when this provider is actually used.
+        from google import genai
+
+        self.client = genai.Client(api_key=api_key)
+        self.model = model
+
+    def embed(self, text: str) -> list[float]:
+        text = text.strip()
+
+        if not text:
+            return [0.0] * self.dimensions
+
+        from google.genai import types
+
+        response = self.client.models.embed_content(
+            model=self.model,
+            contents=text,
+            config=types.EmbedContentConfig(
+                output_dimensionality=self.dimensions,
+            ),
+        )
+
+        return list(response.embeddings[0].values)
+
+
+def get_embedding_provider(settings) -> EmbeddingProvider:
+    """
+    Picks a real embedding provider if one is configured, falling
+    back to the offline hashing placeholder otherwise -- mirrors
+    llm_provider.get_llm_provider()'s pattern, so the app never
+    hard-fails just because a key isn't set, it just degrades to
+    "vocabulary overlap" similarity instead of true semantic search.
+    """
+
+    if settings.gemini_api_key:
+        return GeminiEmbeddingProvider(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_embedding_model,
+        )
+
+    return HashingEmbeddingProvider()

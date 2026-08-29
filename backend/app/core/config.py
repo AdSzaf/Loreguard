@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     obsidian_vault_path: str
 
-    # Optional -- LLM-based prose fact extraction is only
+    # Optional -- LLM-based prose fact extraction (step 19) is only
     # available when at least one of these is set. Everything else
     # in the app works fine without either.
     #
@@ -37,7 +37,14 @@ class Settings(BaseSettings):
     # Google's side -- check ai.google.dev/gemini-api/docs/pricing
     # for the current free-tier-eligible model list if this stops
     # working.
-    gemini_model: str = "gemini-2.5-flash-lite"
+    gemini_model: str = "gemini-3.5-flash-lite"
+
+    # Real semantic embeddings (step 18 -> actually used now). Falls
+    # back to the offline hashing placeholder if gemini_api_key
+    # isn't set (see get_embedding_provider). text-embedding-004 was
+    # deprecated in Jan 2026 -- gemini-embedding-001 is current as
+    # of Aug 2026.
+    gemini_embedding_model: str = "gemini-embedding-001"
 
     model_config = SettingsConfigDict(
         env_file=".env",

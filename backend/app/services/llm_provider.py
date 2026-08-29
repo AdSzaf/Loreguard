@@ -28,6 +28,23 @@ class ExtractedFact:
     object_number: float | None = None
 
 
+@dataclass
+class SemanticConflictCandidate:
+    """
+    A candidate contradiction found by comparing two whole texts
+    for meaning, not just matching predicates (plan section 6/13:
+    two articles describing the same plague with different death
+    tolls, in completely different words). Like ExtractedFact, this
+    is a candidate for the person to review, not accepted truth.
+    """
+
+    claim_a: str
+    claim_b: str
+    quote_a: str
+    quote_b: str
+    confidence: float
+
+
 class LLMProvider:
     """
     Abstract LLM provider (mirrors EmbeddingProvider's pattern, and
@@ -42,6 +59,15 @@ class LLMProvider:
         text: str,
         known_entity_names: list[str],
     ) -> list[ExtractedFact]:
+        raise NotImplementedError
+
+    def compare_texts(
+        self,
+        text_a: str,
+        title_a: str,
+        text_b: str,
+        title_b: str,
+    ) -> list[SemanticConflictCandidate]:
         raise NotImplementedError
 
 
@@ -122,6 +148,91 @@ lista obiektów z kluczami: subject, predicate, object, confidence, \
 source_text, oraz opcjonalnie object_number (tylko dla faktów typu \
 "wiek_podczas", patrz przykład 3). Jeśli nie ma żadnych faktów, zwróć [].
 """
+
+
+SEMANTIC_COMPARISON_SYSTEM_PROMPT = """\
+Porównujesz dwa fragmenty tekstu z encyklopedii świata fantasy/sci-fi, \
+żeby znaleźć sprzeczności FAKTOGRAFICZNE między nimi -- sytuacje, gdzie \
+oba teksty opisują (prawdopodobnie) to samo zdarzenie/osobę/miejsce, \
+ale podają RÓŻNE konkretne wartości (liczby, daty, imiona, wyniki, \
+przyczyny), mimo że użyto zupełnie innych słów.
+
+Przykład tego czego szukasz: jeden tekst mówi "podczas zarazy w stolicy \
+zginęło ponad dziesięć tysięcy mieszkańców", drugi mówi "zaraza w Arven \
+pochłonęła około piętnastu tysięcy istnień" -- różne słowa, ale jeśli \
+stolica to Arven, to 10000 i 15000 to sprzeczne liczby ofiar tej samej \
+zarazy.
+
+Zasady:
+- Zgłaszaj TYLKO sprzeczności, których jesteś rozsądnie pewny -- że oba \
+  fragmenty NAPRAWDĘ opisują to samo, a podane wartości NAPRAWDĘ się \
+  różnią. Nie zgłaszaj różnic w stylu/szczególe, tylko sprzeczne fakty.
+- Jeśli teksty po prostu opisują RÓŻNE rzeczy (nawet jeśli podobne \
+  tematycznie), zwróć pustą listę [] -- to najczęstszy poprawny wynik.
+- claim_a / claim_b: krótki opis konkretnej wartości z każdego tekstu \
+  (np. "liczba ofiar: 10000" / "liczba ofiar: 15000").
+- quote_a / quote_b: dokładny cytat (fragment zdania) z każdego tekstu, \
+  na podstawie którego wyciągnięto sprzeczność.
+- confidence: Twoja pewność że to NAPRAWDĘ sprzeczność (nie że oba \
+  teksty są ogólnie o tym samym temacie): 0.9-1.0 gdy oczywiste, \
+  0.5-0.8 gdy prawdopodobne ale niepewne.
+
+Tekst A ("{title_a}"):
+{text_a}
+
+Tekst B ("{title_b}"):
+{text_b}
+
+Odpowiedz WYŁĄCZNIE poprawnym JSON-em, bez markdown, bez komentarzy: \
+lista obiektów z kluczami: claim_a, claim_b, quote_a, quote_b, \
+confidence. Jeśli nie znajdziesz sprzeczności, zwróć [].
+"""
+
+# Comparing full document bodies could otherwise balloon token
+# cost/latency on long articles -- this is plenty of context for
+# spotting a factual clash without needing the whole page.
+MAX_COMPARISON_TEXT_LENGTH = 4000
+
+
+def _parse_semantic_conflicts(raw_text: str) -> list[SemanticConflictCandidate]:
+    raw_text = _strip_code_fences(raw_text.strip())
+
+    if not raw_text:
+        return []
+
+    try:
+        items = json.loads(raw_text)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Semantic comparison response was not valid JSON. "
+            "Raw response: %r",
+            raw_text[:2000],
+        )
+        return []
+
+    if not isinstance(items, list):
+        return []
+
+    candidates: list[SemanticConflictCandidate] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            candidates.append(
+                SemanticConflictCandidate(
+                    claim_a=str(item["claim_a"]).strip(),
+                    claim_b=str(item["claim_b"]).strip(),
+                    quote_a=str(item.get("quote_a", "")).strip(),
+                    quote_b=str(item.get("quote_b", "")).strip(),
+                    confidence=float(item.get("confidence", 0.5)),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    return candidates
 
 
 def _strip_code_fences(text: str) -> str:
@@ -267,6 +378,33 @@ class AnthropicLLMProvider(LLMProvider):
 
         return _parse_extracted_facts(raw_text)
 
+    def compare_texts(
+        self,
+        text_a: str,
+        title_a: str,
+        text_b: str,
+        title_b: str,
+    ) -> list[SemanticConflictCandidate]:
+        prompt = SEMANTIC_COMPARISON_SYSTEM_PROMPT.format(
+            title_a=title_a,
+            text_a=text_a.strip()[:MAX_COMPARISON_TEXT_LENGTH],
+            title_b=title_b,
+            text_b=text_b.strip()[:MAX_COMPARISON_TEXT_LENGTH],
+        )
+
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=1500,
+            system=prompt,
+            messages=[{"role": "user", "content": "Porównaj powyższe teksty."}],
+        )
+
+        raw_text = "".join(
+            block.text for block in response.content if block.type == "text"
+        )
+
+        return _parse_semantic_conflicts(raw_text)
+
 
 class GeminiLLMProvider(LLMProvider):
     """
@@ -319,6 +457,33 @@ class GeminiLLMProvider(LLMProvider):
         )
 
         return _parse_extracted_facts(response.text or "")
+
+    def compare_texts(
+        self,
+        text_a: str,
+        title_a: str,
+        text_b: str,
+        title_b: str,
+    ) -> list[SemanticConflictCandidate]:
+        from google.genai import types
+
+        prompt = SEMANTIC_COMPARISON_SYSTEM_PROMPT.format(
+            title_a=title_a,
+            text_a=text_a.strip()[:MAX_COMPARISON_TEXT_LENGTH],
+            title_b=title_b,
+            text_b=text_b.strip()[:MAX_COMPARISON_TEXT_LENGTH],
+        )
+
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents="Porównaj powyższe teksty.",
+            config=types.GenerateContentConfig(
+                system_instruction=prompt,
+                response_mime_type="application/json",
+            ),
+        )
+
+        return _parse_semantic_conflicts(response.text or "")
 
 
 def get_llm_provider(settings) -> LLMProvider | None:

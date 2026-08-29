@@ -16,7 +16,9 @@ from app.services.embedding_service import EmbeddingService
 from app.services.entity_indexer import EntityIndexer
 from app.services.event_extractor import EventExtractor
 from app.services.fact_extractor import FactExtractor
+from app.services.embedding_provider import get_embedding_provider
 from app.services.llm_provider import get_llm_provider, logger
+from app.services.semantic_conflict_service import SemanticConflictService
 from app.services.markdown_parser import MarkdownParser
 from app.services.prose_fact_extractor import ProseFactExtractor
 from app.services.vault_scanner import VaultScanner
@@ -110,7 +112,7 @@ def sync_vault(
     entity_indexer = EntityIndexer(db, schema)
     fact_extractor = FactExtractor(db)
     event_extractor = EventExtractor(db, schema)
-    embedding_service = EmbeddingService(db)
+    embedding_service = EmbeddingService(db, get_embedding_provider(settings))
 
     files = scanner.scan_markdown_files()
 
@@ -419,6 +421,28 @@ def get_document(
     }
 
 
+@app.post("/api/embeddings/reembed-all")
+def reembed_all_documents(
+    db: Session = Depends(get_db),
+):
+    """
+    Recomputes every document's embedding with whatever provider is
+    currently configured. Needed after switching providers (e.g.
+    from the offline hashing placeholder to real Gemini embeddings)
+    -- old and new vectors have different dimensions/meaning and
+    are never comparable, so leftover old ones would just silently
+    fail similarity checks (EmbeddingService.find_similar skips
+    mismatched dimensions) rather than error, which is easy to miss.
+    Run this once right after adding GEMINI_API_KEY.
+    """
+
+    embedding_service = EmbeddingService(db, get_embedding_provider(settings))
+    count = embedding_service.reembed_all()
+    db.commit()
+
+    return {"documents_reembedded": count}
+
+
 @app.get("/api/documents/{document_id}/similar")
 def similar_documents(
     document_id: int,
@@ -428,10 +452,9 @@ def similar_documents(
     """
     Documents most similar to this one by embedding cosine
     similarity (plan section 27: narrow the vault down to relevant
-    documents before handing anything to an LLM). Currently backed
-    by an offline placeholder embedding (see embedding_provider.py)
-    -- similarity reflects shared vocabulary, not meaning, until a
-    real provider is plugged in.
+    documents before handing anything to an LLM). Real semantic
+    embeddings when GEMINI_API_KEY is set (see get_embedding_provider),
+    otherwise falls back to the offline vocabulary-overlap placeholder.
     """
 
     document = db.get(Document, document_id)
@@ -439,7 +462,7 @@ def similar_documents(
     if document is None:
         return {"error": "Document not found"}
 
-    embedding_service = EmbeddingService(db)
+    embedding_service = EmbeddingService(db, get_embedding_provider(settings))
     results = embedding_service.find_similar(document, limit=limit)
 
     return {
@@ -629,6 +652,118 @@ def extract_llm_facts(
             for fact in facts
         ],
         "conflicts": conflict_summary,
+    }
+
+
+@app.post("/api/documents/{document_id}/check-semantic-conflicts")
+def check_semantic_conflicts(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Finds contradictions between this document and topically
+    similar ones -- worded completely differently, but describing
+    the same underlying claim (plan section 6/13, the plague-death-
+    toll example). Embeddings narrow the field first (cheap), the
+    LLM only judges the narrowed-down candidates (the actual cost).
+
+    Requires an embedding is computed first (done automatically if
+    missing) and a real embedding provider (GEMINI_API_KEY) for
+    genuinely semantic results -- without it, similarity falls back
+    to shared-vocabulary matching, which finds far fewer real pairs.
+    """
+
+    document = db.get(Document, document_id)
+
+    if document is None:
+        return {"error": "Document not found"}
+
+    provider = get_llm_provider(settings)
+
+    if provider is None:
+        return {
+            "error": (
+                "No LLM provider configured. Set ANTHROPIC_API_KEY "
+                "and/or GEMINI_API_KEY in your .env to enable "
+                "semantic conflict checking."
+            )
+        }
+
+    embedding_service = EmbeddingService(db, get_embedding_provider(settings))
+    service = SemanticConflictService(db, provider, embedding_service)
+
+    result = service.check_document(document)
+    db.commit()
+
+    return {"document": document.title, **result}
+
+
+@app.post("/api/vault/check-semantic-conflicts")
+def check_semantic_conflicts_bulk(
+    force: bool = False,
+    db: Session = Depends(get_db),
+):
+    """
+    Incremental, whole-vault semantic conflict checking -- same
+    pattern as /api/vault/extract-llm-facts: only documents whose
+    content changed since their last check are processed (tracked
+    via Document.semantic_check_hash), one document's failure
+    doesn't abort the batch, and every failure is collected into
+    `failed` instead of only showing up in server logs.
+    """
+
+    provider = get_llm_provider(settings)
+
+    if provider is None:
+        return {
+            "error": (
+                "No LLM provider configured. Set ANTHROPIC_API_KEY "
+                "and/or GEMINI_API_KEY in your .env to enable "
+                "semantic conflict checking."
+            )
+        }
+
+    embedding_service = EmbeddingService(db, get_embedding_provider(settings))
+    service = SemanticConflictService(db, provider, embedding_service)
+
+    documents = db.scalars(select(Document)).all()
+
+    to_process = [
+        document
+        for document in documents
+        if force or document.semantic_check_hash != document.content_hash
+    ]
+
+    processed = 0
+    total_conflicts = 0
+    failed: list[dict] = []
+
+    for document in to_process:
+        try:
+            result = service.check_document(document)
+            db.commit()
+            processed += 1
+            total_conflicts += result.get("conflicts_found", 0)
+        except Exception as exc:  # noqa: BLE001 -- one document's
+            # failure (bad LLM response, rate limit, network blip)
+            # must never abort the whole batch.
+            db.rollback()
+            failed.append({
+                "document_id": document.id,
+                "document": document.title,
+                "error": str(exc),
+            })
+            logger.warning(
+                "Semantic check failed for document %r (id=%s): %s",
+                document.title, document.id, exc,
+            )
+
+    return {
+        "documents_total": len(documents),
+        "processed": processed,
+        "skipped_up_to_date": len(documents) - len(to_process),
+        "conflicts_found": total_conflicts,
+        "failed": failed,
     }
 
 

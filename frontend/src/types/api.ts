@@ -112,6 +112,22 @@ export interface BulkLlmExtractionResult {
   error?: string;
 }
 
+export interface SemanticCheckResult {
+  document?: string;
+  checked_against?: number;
+  conflicts_found?: number;
+  error?: string;
+}
+
+export interface BulkSemanticCheckResult {
+  documents_total?: number;
+  processed?: number;
+  skipped_up_to_date?: number;
+  conflicts_found?: number;
+  failed?: { document_id: number; document: string; error: string }[];
+  error?: string;
+}
+
 export interface EntitySummary {
   id: number;
   name: string;

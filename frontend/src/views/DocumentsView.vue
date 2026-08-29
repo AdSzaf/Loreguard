@@ -4,9 +4,11 @@ import { RouterLink } from "vue-router";
 import { api, ApiError } from "../services/api";
 import type {
   BulkLlmExtractionResult,
+  BulkSemanticCheckResult,
   DocumentSummary,
   LlmExtractionResult,
   LlmStatus,
+  SemanticCheckResult,
 } from "../types/api";
 import Pagination from "../components/Pagination.vue";
 
@@ -24,8 +26,14 @@ const llmStatus = ref<LlmStatus | null>(null);
 const extracting = reactive<Record<number, boolean>>({});
 const results = reactive<Record<number, LlmExtractionResult>>({});
 
+const checkingSemantic = reactive<Record<number, boolean>>({});
+const semanticResults = reactive<Record<number, SemanticCheckResult>>({});
+
 const bulkRunning = ref(false);
 const bulkResult = ref<BulkLlmExtractionResult | null>(null);
+
+const bulkSemanticRunning = ref(false);
+const bulkSemanticResult = ref<BulkSemanticCheckResult | null>(null);
 
 async function load() {
   loading.value = true;
@@ -68,6 +76,22 @@ async function extract(doc: DocumentSummary) {
   }
 }
 
+async function checkSemantic(doc: DocumentSummary) {
+  checkingSemantic[doc.id] = true;
+  delete semanticResults[doc.id];
+
+  try {
+    semanticResults[doc.id] = await api.checkSemanticConflicts(doc.id);
+  } catch (e) {
+    semanticResults[doc.id] = {
+      error: e instanceof ApiError ? e.message : "Sprawdzenie semantyczne nie powiodło się.",
+    };
+  } finally {
+    checkingSemantic[doc.id] = false;
+    await load();
+  }
+}
+
 async function runBulk(force: boolean) {
   bulkRunning.value = true;
   bulkResult.value = null;
@@ -84,6 +108,22 @@ async function runBulk(force: boolean) {
     };
   } finally {
     bulkRunning.value = false;
+    await load();
+  }
+}
+
+async function runBulkSemantic(force: boolean) {
+  bulkSemanticRunning.value = true;
+  bulkSemanticResult.value = null;
+
+  try {
+    bulkSemanticResult.value = await api.checkSemanticConflictsBulk(force);
+  } catch (e) {
+    bulkSemanticResult.value = {
+      error: e instanceof ApiError ? e.message : "Sprawdzenie semantyczne nie powiodło się.",
+    };
+  } finally {
+    bulkSemanticRunning.value = false;
     await load();
   }
 }
@@ -158,6 +198,52 @@ onMounted(load);
       </div>
     </div>
 
+    <div class="bulk-panel">
+      <div class="bulk-panel__row">
+        <div>
+          <span class="bulk-panel__label">Sprawdzanie semantyczne</span>
+          <p class="bulk-panel__hint">
+            Szuka sprzeczności między dokumentami opisującymi to samo innymi
+            słowami (embeddingi zawężają, LLM ocenia). Też inkrementalne.
+          </p>
+        </div>
+        <div class="bulk-panel__buttons">
+          <button
+            class="btn btn--primary"
+            :disabled="bulkSemanticRunning || !llmStatus?.active_provider"
+            @click="runBulkSemantic(false)"
+          >
+            {{ bulkSemanticRunning ? "Sprawdzam…" : "Sprawdź nowe/zmienione" }}
+          </button>
+          <button
+            class="btn"
+            :disabled="bulkSemanticRunning || !llmStatus?.active_provider"
+            title="Sprawdza WSZYSTKIE dokumenty od nowa"
+            @click="runBulkSemantic(true)"
+          >
+            Sprawdź wszystko od nowa
+          </button>
+        </div>
+      </div>
+
+      <div v-if="bulkSemanticResult" class="bulk-result">
+        <p v-if="bulkSemanticResult.error" class="banner banner--error">{{ bulkSemanticResult.error }}</p>
+        <template v-else>
+          <p class="bulk-result__summary">
+            Przetworzono: {{ bulkSemanticResult.processed }} ·
+            Pominięto (aktualne): {{ bulkSemanticResult.skipped_up_to_date }} ·
+            Błędy: {{ bulkSemanticResult.failed?.length ?? 0 }} ·
+            Znalezione konflikty: {{ bulkSemanticResult.conflicts_found ?? 0 }}
+          </p>
+          <ul v-if="bulkSemanticResult.failed?.length" class="bulk-errors">
+            <li v-for="f in bulkSemanticResult.failed" :key="f.document_id" class="bulk-errors__item">
+              <strong>{{ f.document }}</strong>: {{ f.error }}
+            </li>
+          </ul>
+        </template>
+      </div>
+    </div>
+
     <p v-if="error" class="banner banner--error">{{ error }}</p>
     <p v-else-if="loading" class="muted">Ładowanie…</p>
     <p v-else-if="documents.length === 0" class="muted">Brak dokumentów. Zsynchronizuj vault na Dashboardzie.</p>
@@ -173,14 +259,24 @@ onMounted(load);
             <span class="document-card__path mono">{{ doc.path }}</span>
           </div>
 
-          <button
-            class="btn"
-            :disabled="extracting[doc.id] || !llmStatus?.active_provider"
-            :title="!llmStatus?.active_provider ? 'Skonfiguruj ANTHROPIC_API_KEY lub GEMINI_API_KEY w .env' : ''"
-            @click="extract(doc)"
-          >
-            {{ extracting[doc.id] ? "Analizuję…" : "Wyciągnij fakty (LLM)" }}
-          </button>
+          <div class="document-card__actions">
+            <button
+              class="btn"
+              :disabled="extracting[doc.id] || !llmStatus?.active_provider"
+              :title="!llmStatus?.active_provider ? 'Skonfiguruj ANTHROPIC_API_KEY lub GEMINI_API_KEY w .env' : ''"
+              @click="extract(doc)"
+            >
+              {{ extracting[doc.id] ? "Analizuję…" : "Wyciągnij fakty (LLM)" }}
+            </button>
+            <button
+              class="btn"
+              :disabled="checkingSemantic[doc.id] || !llmStatus?.active_provider"
+              :title="!llmStatus?.active_provider ? 'Skonfiguruj ANTHROPIC_API_KEY lub GEMINI_API_KEY w .env' : 'Szuka sprzeczności z podobnymi tematycznie dokumentami'"
+              @click="checkSemantic(doc)"
+            >
+              {{ checkingSemantic[doc.id] ? "Sprawdzam…" : "Sprawdź semantycznie" }}
+            </button>
+          </div>
         </div>
 
         <div v-if="results[doc.id]" class="result">
@@ -208,6 +304,16 @@ onMounted(load);
               </li>
             </ul>
           </template>
+        </div>
+
+        <div v-if="semanticResults[doc.id]" class="result">
+          <p v-if="semanticResults[doc.id].error" class="banner banner--error">
+            {{ semanticResults[doc.id].error }}
+          </p>
+          <p v-else class="result__summary">
+            Sprawdzono {{ semanticResults[doc.id].checked_against ?? 0 }} podobnych dokumentów,
+            znaleziono {{ semanticResults[doc.id].conflicts_found ?? 0 }} konflikt(ów).
+          </p>
         </div>
       </li>
     </ul>
@@ -382,6 +488,12 @@ onMounted(load);
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.document-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .document-card__info {

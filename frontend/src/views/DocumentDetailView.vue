@@ -2,7 +2,12 @@
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { api, ApiError } from "../services/api";
-import type { DocumentDetail, LlmExtractionResult, LlmStatus } from "../types/api";
+import type {
+  DocumentDetail,
+  LlmExtractionResult,
+  LlmStatus,
+  SemanticCheckResult,
+} from "../types/api";
 
 const props = defineProps<{ id: string }>();
 
@@ -13,6 +18,9 @@ const error = ref<string | null>(null);
 const llmStatus = ref<LlmStatus | null>(null);
 const extracting = ref(false);
 const extractionResult = ref<LlmExtractionResult | null>(null);
+
+const checkingSemantic = ref(false);
+const semanticResult = ref<SemanticCheckResult | null>(null);
 
 async function load() {
   loading.value = true;
@@ -50,6 +58,24 @@ async function extract() {
   }
 }
 
+async function checkSemantic() {
+  if (!doc.value) return;
+
+  checkingSemantic.value = true;
+  semanticResult.value = null;
+
+  try {
+    semanticResult.value = await api.checkSemanticConflicts(doc.value.id);
+  } catch (e) {
+    semanticResult.value = {
+      error: e instanceof ApiError ? e.message : "Sprawdzenie semantyczne nie powiodło się.",
+    };
+  } finally {
+    checkingSemantic.value = false;
+    await load();
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -68,14 +94,24 @@ onMounted(load);
           <p class="page__path mono">{{ doc.path }}</p>
         </div>
 
-        <button
-          class="btn btn--primary"
-          :disabled="extracting || !llmStatus?.active_provider"
-          :title="!llmStatus?.active_provider ? 'Skonfiguruj ANTHROPIC_API_KEY lub GEMINI_API_KEY w .env' : ''"
-          @click="extract"
-        >
-          {{ extracting ? "Analizuję…" : "Wyciągnij fakty (LLM)" }}
-        </button>
+        <div class="page__actions">
+          <button
+            class="btn btn--primary"
+            :disabled="extracting || !llmStatus?.active_provider"
+            :title="!llmStatus?.active_provider ? 'Skonfiguruj ANTHROPIC_API_KEY lub GEMINI_API_KEY w .env' : ''"
+            @click="extract"
+          >
+            {{ extracting ? "Analizuję…" : "Wyciągnij fakty (LLM)" }}
+          </button>
+          <button
+            class="btn"
+            :disabled="checkingSemantic || !llmStatus?.active_provider"
+            :title="!llmStatus?.active_provider ? 'Skonfiguruj ANTHROPIC_API_KEY lub GEMINI_API_KEY w .env' : 'Szuka sprzeczności z podobnymi tematycznie dokumentami'"
+            @click="checkSemantic"
+          >
+            {{ checkingSemantic ? "Sprawdzam…" : "Sprawdź semantycznie" }}
+          </button>
+        </div>
       </header>
 
       <div v-if="extractionResult" class="result">
@@ -85,6 +121,14 @@ onMounted(load);
           <template v-if="extractionResult.conflicts">
             Nowe konflikty: {{ extractionResult.conflicts.created }}.
           </template>
+        </p>
+      </div>
+
+      <div v-if="semanticResult" class="result">
+        <p v-if="semanticResult.error" class="banner banner--error">{{ semanticResult.error }}</p>
+        <p v-else class="result__summary">
+          Sprawdzono {{ semanticResult.checked_against ?? 0 }} podobnych dokumentów,
+          znaleziono {{ semanticResult.conflicts_found ?? 0 }} konflikt(ów).
         </p>
       </div>
 
@@ -134,6 +178,12 @@ onMounted(load);
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
+}
+
+.page__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .page__title {

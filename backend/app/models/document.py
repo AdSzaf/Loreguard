@@ -83,3 +83,14 @@ class Document(Base):
         String(64),
         nullable=True,
     )
+
+    # Same idea as llm_facts_hash, but for semantic (cross-document)
+    # conflict checking -- set by SemanticConflictService itself.
+    # Note: only tracks whether THIS document's own content changed
+    # since its last check, not whether a newly-added similar
+    # document elsewhere might now be worth comparing against; a
+    # force re-check covers that case.
+    semantic_check_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
