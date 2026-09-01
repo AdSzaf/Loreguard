@@ -112,7 +112,6 @@ def sync_vault(
     entity_indexer = EntityIndexer(db, schema)
     fact_extractor = FactExtractor(db)
     event_extractor = EventExtractor(db, schema)
-    embedding_service = EmbeddingService(db, get_embedding_provider(settings))
 
     files = scanner.scan_markdown_files()
 
@@ -177,7 +176,18 @@ def sync_vault(
             parsed_document,
         )
 
-        embedding_service.update_document_embedding(document)
+        # Deliberately NOT computed here. Embeddings hit a real,
+        # separate external API with its own rate limit -- this used
+        # to run unconditionally for every synced document and a
+        # single 429 would crash the *entire* sync (documents,
+        # facts, events, everything), which is unacceptable for the
+        # app's most important, most frequently run feature.
+        #
+        # Embeddings are opt-in and computed lazily instead, the
+        # same way LLM extraction is: SemanticConflictService
+        # computes a document's embedding on first use (see
+        # check_document), so a rate limit there only affects that
+        # one opt-in action, never a plain sync.
 
         documents_summary.append({
             "id": document.id,
@@ -692,8 +702,23 @@ def check_semantic_conflicts(
     embedding_service = EmbeddingService(db, get_embedding_provider(settings))
     service = SemanticConflictService(db, provider, embedding_service)
 
-    result = service.check_document(document)
-    db.commit()
+    try:
+        result = service.check_document(document)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 -- external API call
+        # (embeddings or LLM), e.g. a rate limit -- must return a
+        # clean error, not a raw 500 (which can also confuse the
+        # browser into reporting a misleading CORS error instead of
+        # the real cause).
+        db.rollback()
+        logger.warning(
+            "Semantic check failed for document %r (id=%s): %s",
+            document.title, document.id, exc,
+        )
+        return {
+            "document": document.title,
+            "error": f"Sprawdzenie semantyczne nie powiodło się: {exc}",
+        }
 
     return {"document": document.title, **result}
 
