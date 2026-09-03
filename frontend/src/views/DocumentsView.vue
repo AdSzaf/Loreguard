@@ -254,7 +254,7 @@ onMounted(load);
           <div class="document-card__info">
             <RouterLink :to="`/documents/${doc.id}`" class="document-card__title">
               {{ doc.title }}
-              <span v-if="doc.needs_llm_processing" class="pending-dot" title="Wymaga przetworzenia LLM" />
+              <span v-if="doc.needs_llm_processing" class="pending-dot" title="Wymaga przetworzenia LLM" /><span v-if="doc.needs_semantic_check" class="pending-dot pending-dot--semantic" title="Wymaga sprawdzenia semantycznego" />
             </RouterLink>
             <span class="document-card__path mono">{{ doc.path }}</span>
           </div>
@@ -448,6 +448,10 @@ onMounted(load);
   background: var(--accent);
   margin-left: 6px;
   vertical-align: middle;
+}
+
+.pending-dot--semantic {
+  background: var(--severity-medium, #d9a441);
 }
 
 .banner {

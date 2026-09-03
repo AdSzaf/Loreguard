@@ -49,6 +49,7 @@ export interface DocumentSummary {
   entities_linked: number;
   has_embedding?: boolean;
   needs_llm_processing?: boolean;
+  needs_semantic_check?: boolean;
 }
 
 export interface DocumentFactView {
@@ -69,6 +70,7 @@ export interface DocumentDetail {
   file_modified_at: string;
   has_embedding: boolean;
   needs_llm_processing: boolean;
+  needs_semantic_check: boolean;
   entities: { id: number; name: string; entity_type: EntityType }[];
   facts: DocumentFactView[];
 }

@@ -361,6 +361,9 @@ def list_documents(
                 "needs_llm_processing": (
                     document.llm_facts_hash != document.content_hash
                 ),
+                "needs_semantic_check": (
+                    document.semantic_check_hash != document.content_hash
+                ),
             }
             for document in documents
         ],
@@ -402,6 +405,9 @@ def get_document(
         "has_embedding": document.embedding is not None,
         "needs_llm_processing": (
             document.llm_facts_hash != document.content_hash
+        ),
+        "needs_semantic_check": (
+            document.semantic_check_hash != document.content_hash
         ),
         "entities": [
             {

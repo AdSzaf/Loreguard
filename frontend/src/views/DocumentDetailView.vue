@@ -89,7 +89,7 @@ onMounted(load);
         <div>
           <h1 class="page__title">
             {{ doc.title }}
-            <span v-if="doc.needs_llm_processing" class="pending-dot" title="Wymaga przetworzenia LLM" />
+            <span v-if="doc.needs_llm_processing" class="pending-dot" title="Wymaga przetworzenia LLM" /><span v-if="doc.needs_semantic_check" class="pending-dot pending-dot--semantic" title="Wymaga sprawdzenia semantycznego" />
           </h1>
           <p class="page__path mono">{{ doc.path }}</p>
         </div>
@@ -207,6 +207,10 @@ onMounted(load);
   background: var(--accent);
   margin-left: 6px;
   vertical-align: middle;
+}
+
+.pending-dot--semantic {
+  background: var(--severity-medium, #d9a441);
 }
 
 .btn {
