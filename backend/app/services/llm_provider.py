@@ -153,29 +153,54 @@ source_text, oraz opcjonalnie object_number (tylko dla faktów typu \
 SEMANTIC_COMPARISON_SYSTEM_PROMPT = """\
 Porównujesz dwa fragmenty tekstu z encyklopedii świata fantasy/sci-fi, \
 żeby znaleźć sprzeczności FAKTOGRAFICZNE między nimi -- sytuacje, gdzie \
-oba teksty opisują (prawdopodobnie) to samo zdarzenie/osobę/miejsce, \
+oba teksty opisują (prawdopodobnie) TO SAMO zdarzenie/osobę/miejsce, \
 ale podają RÓŻNE konkretne wartości (liczby, daty, imiona, wyniki, \
 przyczyny), mimo że użyto zupełnie innych słów.
 
-Przykład tego czego szukasz: jeden tekst mówi "podczas zarazy w stolicy \
-zginęło ponad dziesięć tysięcy mieszkańców", drugi mówi "zaraza w Arven \
-pochłonęła około piętnastu tysięcy istnień" -- różne słowa, ale jeśli \
-stolica to Arven, to 10000 i 15000 to sprzeczne liczby ofiar tej samej \
-zarazy.
+KLUCZOWY KROK -- zanim zgłosisz jakąkolwiek sprzeczność, zadaj sobie \
+pytanie: czy Tekst A ("{title_a}") i Tekst B ("{title_b}") mówią o TEJ \
+SAMEJ, konkretnej osobie/miejscu/wydarzeniu -- czy tylko o PODOBNYM \
+TYPIE sytuacji dotyczącej DWÓCH RÓŻNYCH bytów? Jeśli tytuły/podmioty \
+tekstów to wyraźnie różne, osobne byty (dwie różne osoby, dwa różne \
+miejsca), to fakt osobisty/właściwy dla każdego z nich z osobna (np. \
+wiek, tytuł, cechy charakteru, data urodzenia -- coś co z definicji \
+dotyczy TYLKO tego jednego bytu) NIE MOŻE być sprzecznością między \
+nimi, nawet jeśli oba teksty podają wartość tego samego RODZAJU. To \
+nie jest sprzeczność, tylko dwa niezależne fakty o dwóch różnych \
+bytach. Sprzeczność jest możliwa tylko gdy oba teksty opisują coś \
+WSPÓLNEGO -- to samo wydarzenie, to samo miejsce, tę samą osobę (także \
+pod innym imieniem/tytułem) -- z różnym skutkiem.
+
+Przykład POPRAWNIE wykrytej sprzeczności: jeden tekst mówi "podczas \
+zarazy w stolicy zginęło ponad dziesięć tysięcy mieszkańców", drugi \
+mówi "zaraza w Arven pochłonęła około piętnastu tysięcy istnień" -- \
+różne słowa, ale jeśli stolica to Arven, oba teksty opisują TĘ SAMĄ \
+zarazę, więc 10000 i 15000 to sprzeczne liczby ofiar tego samego \
+wydarzenia.
+
+Przykład BŁĘDU, którego masz UNIKAĆ: Tekst A to biogram władczyni \
+"Clarisse III", mówiący że objęła władzę w wieku 35 lat. Tekst B to \
+biogram INNEJ władczyni, "Auriana VI", mówiąca że objęła władzę w \
+wieku 29 lat. To NIE JEST sprzeczność -- to dwie różne osoby, każda \
+z własnym, niezależnym wiekiem objęcia władzy. Sam fakt, że oba teksty \
+podają "wiek objęcia władzy" (ten sam RODZAJ faktu) nie oznacza, że \
+mówią o tej samej osobie. W takim wypadku zwróć pustą listę [].
 
 Zasady:
 - Zgłaszaj TYLKO sprzeczności, których jesteś rozsądnie pewny -- że oba \
-  fragmenty NAPRAWDĘ opisują to samo, a podane wartości NAPRAWDĘ się \
-  różnią. Nie zgłaszaj różnic w stylu/szczególe, tylko sprzeczne fakty.
-- Jeśli teksty po prostu opisują RÓŻNE rzeczy (nawet jeśli podobne \
-  tematycznie), zwróć pustą listę [] -- to najczęstszy poprawny wynik.
+  fragmenty NAPRAWDĘ opisują ten sam, konkretny byt/wydarzenie, a \
+  podane wartości NAPRAWDĘ się różnią. Nie zgłaszaj różnic w \
+  stylu/szczególe, tylko sprzeczne fakty o tym samym bycie.
+- Jeśli teksty opisują RÓŻNE byty (nawet jeśli tego samego typu, np. \
+  dwóch różnych władców, dwa różne miasta), zwróć pustą listę [] -- \
+  to najczęstszy poprawny wynik.
 - claim_a / claim_b: krótki opis konkretnej wartości z każdego tekstu \
   (np. "liczba ofiar: 10000" / "liczba ofiar: 15000").
 - quote_a / quote_b: dokładny cytat (fragment zdania) z każdego tekstu, \
   na podstawie którego wyciągnięto sprzeczność.
-- confidence: Twoja pewność że to NAPRAWDĘ sprzeczność (nie że oba \
-  teksty są ogólnie o tym samym temacie): 0.9-1.0 gdy oczywiste, \
-  0.5-0.8 gdy prawdopodobne ale niepewne.
+- confidence: Twoja pewność że to NAPRAWDĘ sprzeczność O TYM SAMYM \
+  BYCIE (nie że oba teksty są ogólnie podobnego typu): 0.9-1.0 gdy \
+  oczywiste, 0.5-0.8 gdy prawdopodobne ale niepewne.
 
 Tekst A ("{title_a}"):
 {text_a}

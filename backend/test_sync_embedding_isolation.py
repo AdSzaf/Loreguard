@@ -32,6 +32,8 @@ VAULT.mkdir(parents=True)
     encoding="utf-8",
 )
 
+from unittest.mock import patch
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -129,7 +131,8 @@ class DummyLLM(LLMProvider):
 
 main_module.get_llm_provider = lambda settings: DummyLLM()
 
-r4 = client.post(f"/api/documents/{doc_id}/check-semantic-conflicts")
+with patch("app.services.retry_utils.time.sleep"):
+    r4 = client.post(f"/api/documents/{doc_id}/check-semantic-conflicts")
 check("status 200, NOT a raw 500", r4.status_code == 200)
 check("clean JSON error returned", "error" in r4.json())
 print("  error message:", r4.json().get("error"))

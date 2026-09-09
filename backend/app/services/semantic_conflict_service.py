@@ -5,6 +5,7 @@ from app.core.db_utils import ci_equals
 from app.models import Conflict, ConflictSeverity, ConflictStatus, Document, Entity, Fact
 from app.services.embedding_service import EmbeddingService
 from app.services.llm_provider import LLMProvider
+from app.services.retry_utils import call_with_rate_limit_retry
 
 
 class SemanticConflictService:
@@ -64,7 +65,9 @@ class SemanticConflictService:
             }
 
         if document.embedding is None:
-            self.embedding_service.update_document_embedding(document)
+            call_with_rate_limit_retry(
+                self.embedding_service.update_document_embedding, document,
+            )
             self.db.flush()
 
         similar = self.embedding_service.find_similar(
@@ -107,7 +110,8 @@ class SemanticConflictService:
         conflicts_found = 0
 
         for other_doc, similarity in similar:
-            candidates = self.llm_provider.compare_texts(
+            candidates = call_with_rate_limit_retry(
+                self.llm_provider.compare_texts,
                 document.content or "",
                 document.title,
                 other_doc.content or "",
