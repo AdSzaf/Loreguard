@@ -111,12 +111,3 @@ które predykaty są traktowane jako wzajemnie wykluczające się — jest
 konfigurowalny przez opcjonalny plik `.loreguard/schema.yaml` w Twoim
 vault, z sensownymi domyślnymi wartościami (PL+EN) na start.
 
-## Stan projektu
-
-Aktywnie rozwijany, przetestowany na prawdziwym, wielosetnotatkowym
-vault. Pełny dziennik rozwoju, decyzje projektowe i lista TODO w
-[`PROJECT_STATUS.md`](./PROJECT_STATUS.md).
-
-## Licencja
-
-*(uzupełnij według uznania)*
