@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.db_utils import ci_equals
 from app.models import Document, Entity, EntityAlias, Fact
 from app.services.llm_provider import LLMProvider, logger
+from app.services.retry_utils import call_with_rate_limit_retry
 
 
 class ProseFactExtractor:
@@ -62,7 +63,9 @@ class ProseFactExtractor:
             for (name,) in self.db.execute(select(Entity.name)).all()
         ]
 
-        candidates = self.provider.extract_facts(text, known_entity_names)
+        candidates = call_with_rate_limit_retry(
+            self.provider.extract_facts, text, known_entity_names,
+        )
 
         self.db.query(Fact).filter(
             Fact.document_id == document.id,

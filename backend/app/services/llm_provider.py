@@ -160,16 +160,32 @@ przyczyny), mimo że użyto zupełnie innych słów.
 KLUCZOWY KROK -- zanim zgłosisz jakąkolwiek sprzeczność, zadaj sobie \
 pytanie: czy Tekst A ("{title_a}") i Tekst B ("{title_b}") mówią o TEJ \
 SAMEJ, konkretnej osobie/miejscu/wydarzeniu -- czy tylko o PODOBNYM \
-TYPIE sytuacji dotyczącej DWÓCH RÓŻNYCH bytów? Jeśli tytuły/podmioty \
-tekstów to wyraźnie różne, osobne byty (dwie różne osoby, dwa różne \
-miejsca), to fakt osobisty/właściwy dla każdego z nich z osobna (np. \
-wiek, tytuł, cechy charakteru, data urodzenia -- coś co z definicji \
-dotyczy TYLKO tego jednego bytu) NIE MOŻE być sprzecznością między \
-nimi, nawet jeśli oba teksty podają wartość tego samego RODZAJU. To \
-nie jest sprzeczność, tylko dwa niezależne fakty o dwóch różnych \
-bytach. Sprzeczność jest możliwa tylko gdy oba teksty opisują coś \
-WSPÓLNEGO -- to samo wydarzenie, to samo miejsce, tę samą osobę (także \
-pod innym imieniem/tytułem) -- z różnym skutkiem.
+TYPIE sytuacji dotyczącej DWÓCH RÓŻNYCH bytów? PORÓWNAJ DOSŁOWNIE \
+IMIĘ WŁASNE w obu tytułach (ignorując dopiski opisowe w nawiasach, \
+np. "(Siostra X)", "(Córka Y)") -- jeśli imiona własne są różne \
+("Adalind" vs "Ida"), to są to RÓŻNE osoby, nawet jeśli oba tytuły \
+mają identyczny dopisek opisowy (obie mogą być np. "Siostra Valeriana \
+XI" -- to nie czyni ich tą samą osobą, tylko dwiema siostrami tej \
+samej osoby trzeciej). Jeśli tytuły/podmioty tekstów to wyraźnie \
+różne, osobne byty (dwie różne osoby, dwa różne miejsca), to fakt \
+osobisty/właściwy dla każdego z nich z osobna (np. wiek, tytuł, cechy \
+charakteru, data urodzenia -- coś co z definicji dotyczy TYLKO tego \
+jednego bytu) NIE MOŻE być sprzecznością między nimi, nawet jeśli oba \
+teksty podają wartość tego samego RODZAJU. To nie jest sprzeczność, \
+tylko dwa niezależne fakty o dwóch różnych bytach. Sprzeczność jest \
+możliwa tylko gdy oba teksty opisują coś WSPÓLNEGO -- to samo \
+wydarzenie, to samo miejsce, tę samą osobę (także pod innym \
+imieniem/tytułem) -- z różnym skutkiem.
+
+DRUGI KLUCZOWY KROK -- jeśli oba teksty NAPRAWDĘ opisują to samo \
+wydarzenie, sprawdź czy podane wartości są RZECZYWIŚCIE sprzeczne, \
+czy tylko INACZEJ SFORMUŁOWANE ale logicznie tożsame. "X przegrał z Y" \
+i "Y wygrał z X" to TO SAMO zdarzenie opisane z dwóch stron -- nie \
+sprzeczność, tylko potwierdzenie. Podobnie "A sprzedał coś B" i "B \
+kupił coś od A". Zgłaszaj sprzeczność tylko gdy wartości NAPRAWDĘ się \
+wykluczają (np. oba źródła twierdzą że WYGRAŁY, albo podają różne \
+liczby/daty tego samego zdarzenia) -- nie gdy to samo zdarzenie jest \
+po prostu opisane z dwóch uzupełniających się perspektyw.
 
 Przykład POPRAWNIE wykrytej sprzeczności: jeden tekst mówi "podczas \
 zarazy w stolicy zginęło ponad dziesięć tysięcy mieszkańców", drugi \
@@ -178,13 +194,31 @@ różne słowa, ale jeśli stolica to Arven, oba teksty opisują TĘ SAMĄ \
 zarazę, więc 10000 i 15000 to sprzeczne liczby ofiar tego samego \
 wydarzenia.
 
-Przykład BŁĘDU, którego masz UNIKAĆ: Tekst A to biogram władczyni \
-"Clarisse III", mówiący że objęła władzę w wieku 35 lat. Tekst B to \
-biogram INNEJ władczyni, "Auriana VI", mówiąca że objęła władzę w \
-wieku 29 lat. To NIE JEST sprzeczność -- to dwie różne osoby, każda \
-z własnym, niezależnym wiekiem objęcia władzy. Sam fakt, że oba teksty \
-podają "wiek objęcia władzy" (ten sam RODZAJ faktu) nie oznacza, że \
-mówią o tej samej osobie. W takim wypadku zwróć pustą listę [].
+Przykład BŁĘDU nr 1, którego masz UNIKAĆ (różne osoby, wspólny \
+dopisek): Tekst A to biogram "Adalind (Siostra Valeriana XI)", \
+mówiący że urodziła się w 4993. Tekst B to biogram "Ida (Siostra \
+Valeriana XI)", mówiący że urodziła się w 4991. Mimo identycznego \
+dopisku "(Siostra Valeriana XI)" w obu tytułach, IMIONA WŁASNE \
+("Adalind" vs "Ida") są różne -- to dwie różne siostry, każda z \
+własnym, niezależnym rokiem urodzenia. To NIE JEST sprzeczność, \
+zwróć pustą listę [].
+
+Przykład BŁĘDU nr 2, którego masz UNIKAĆ (logiczna równoważność, nie \
+sprzeczność): Tekst A ("Solumin") mówi "Solumin przegrał towarzyski \
+pojedynek z Lunaris". Tekst B ("Lunaris") mówi "Lunaris wygrała \
+towarzyski pojedynek z Soluminem". To OPISUJE TO SAMO ZDARZENIE Z TYM \
+SAMYM WYNIKIEM -- przegrana Solumina i wygrana Lunaris to dwie strony \
+tego samego faktu, nie dwa różne fakty. To NIE JEST sprzeczność, \
+zwróć pustą listę [].
+
+Przykład BŁĘDU nr 3, którego masz UNIKAĆ (różne osoby, ten sam \
+RODZAJ faktu): Tekst A to biogram władczyni "Clarisse III", mówiący \
+że objęła władzę w wieku 35 lat. Tekst B to biogram INNEJ władczyni, \
+"Auriana VI", mówiąca że objęła władzę w wieku 29 lat. To NIE JEST \
+sprzeczność -- to dwie różne osoby, każda z własnym, niezależnym \
+wiekiem objęcia władzy. Sam fakt, że oba teksty podają "wiek objęcia \
+władzy" (ten sam RODZAJ faktu) nie oznacza, że mówią o tej samej \
+osobie. W takim wypadku zwróć pustą listę [].
 
 Zasady:
 - Zgłaszaj TYLKO sprzeczności, których jesteś rozsądnie pewny -- że oba \

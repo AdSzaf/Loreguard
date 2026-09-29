@@ -1,72 +1,56 @@
 # LoreGuard
+[English version](#) | [Wersja polska](./README_pl.md)
 
-**Strażnik kanonu dla światów tworzonych w Obsidianie.**
+**A canon guardian for world-building and lore in Obsidian vaults.**
 
-LoreGuard skanuje Twój Obsidian vault, wyciąga ustrukturyzowane fakty
-z notatek (frontmatter + treść), i wykrywa sprzeczności między nimi —
-niezgodne daty śmierci, niemożliwy wiek, sprzeczne relacje rodzinne,
-dwa źródła opisujące to samo wydarzenie różnymi liczbami.
+LoreGuard scans your Obsidian vault, extracts structured facts from notes (frontmatter + content), and detects contradictions—such as conflicting death dates, impossible ages, contradictory family ties, or differing descriptions of the same event.
 
-LoreGuard nigdy nie edytuje Twoich notatek. Tylko zgłasza konflikty —
-Ty decydujesz, czy to błąd, celowy element lore, czy nieporozumienie.
+LoreGuard **never edits your notes automatically**. It only reports conflicts—you decide whether it's an error, intentional lore, or a misunderstanding.
 
-## Jak to działa
+---
 
-```
-Obsidian vault
-     │
-     ▼
-skan .md + parser frontmatter/wikilinków
-     │
-     ▼
-encje + fakty (z YAML) ──────────┐
-     │                            │
-     ▼                            │
-Event (daty, uczestnicy)          │
-     │                            │
-     ▼                            ▼
-        Deterministyczny silnik reguł
-                    │
-                    ▼
-              KONFLIKTY
-```
+## How It Works
 
-Fakty z frontmatter wyciągane są automatycznie przy każdej
-synchronizacji. Głębsza analiza — ekstrakcja faktów z prozy i porównanie
-semantyczne między dokumentami — korzysta z LLM i jest opcjonalna,
-uruchamiana świadomie (per dokument lub zbiorczo), bo kosztuje realne
-zapytania API.
+Obsidian Vault 
+  ↓
+.md scan & Frontmatter/Wikilink Parser
+  ↓
+Entities + Facts (YAML) ────────┐
+  ↓                             │
+Event Data (dates, participants)│
+  ↓                             ▼
+        Deterministic Rules Engine
+                    ↓
+                CONFLICTS
 
-## Co wykrywa
+Frontmatter facts are parsed automatically on sync. Deeper analysis—extracting facts from prose and semantic cross-document comparison—uses optional LLMs, triggered manually per document or in bulk, as it incurs real API costs.
 
-- **Sprzeczne fakty** — dwie różne wartości tego samego pytania o tę samą
-  osobę/miejsce (np. dwie różne daty śmierci), nawet gdy opisane innymi
-  słowami ("zginął" vs "umarł")
-- **Złe zakresy dat** — koniec wydarzenia przed jego początkiem
-- **Sprzeczne relacje** — "jest córką X" w jednym źródle, "jest siostrą X"
-  w drugim
-- **Niemożliwy wiek** — ktoś miał podany wiek w roku, który matematycznie
-  się nie zgadza z jego datą urodzenia
-- **Sprzeczności semantyczne** — dwa dokumenty opisujące to samo
-  zdarzenie zupełnie innymi słowami, z różnymi liczbami/detalami
-  (wymaga LLM + embeddingów)
+---
 
-Silnik reguł jest świadomie ostrożny: domyślnie tylko wąska lista
-predykatów (śmierć, narodziny, stolica) jest traktowana jako
-"jednowartościowa". Reszta (tytuły, epitety, dziedziny bóstw) może mieć
-wiele wartości naraz bez wywoływania fałszywych alarmów.
+## What It Detects
 
-## Stack
+- **Contradictory Facts** — Different values for the same property regarding a person/place (e.g., two different death dates), even when phrased differently.
+- **Invalid Date Ranges** — End dates preceding start dates.
+- **Contradictory Relations** — "Is daughter of X" in one source vs. "is sister of X" in another.
+- **Impossible Age** — Mathematical mismatch between stated age and birth date.
+- **Semantic Contradictions** — Two documents describing the same event differently with conflicting numbers/details (requires LLMs + embeddings).
 
-- **Backend**: FastAPI + SQLAlchemy + PostgreSQL + Alembic
-- **Frontend**: Vue 3 + Vite + TypeScript
-- **LLM**: wymienny provider — Anthropic Claude lub Google Gemini
-  (auto-wykrywany po kluczu API w `.env`)
-- **Embeddingi**: Gemini Embedding API (opcjonalne, z offline fallbackiem)
+The rules engine is intentionally cautious: by default, only a narrow list of predicates (death, birth, capital city) are treated as single-valued. Everything else allows multiple values without false alarms.
 
-Zero Dockera — działa natywnie na Windows/Linux/Mac.
+---
 
-## Szybki start
+## Tech Stack
+
+- **Backend**: FastAPI, SQLAlchemy, PostgreSQL, Alembic
+- **Frontend**: Vue 3, Vite, TypeScript
+- **LLM**: Interchangeable provider — Anthropic Claude or Google Gemini (auto-detected via `.env` API key)
+- **Embeddings**: Gemini Embedding API (optional, with offline fallback)
+
+No Docker required — runs natively on Windows, Linux, and macOS.
+
+---
+
+## Quick Start
 
 ### Backend
 
@@ -75,39 +59,24 @@ cd backend
 pip install -r requirements.txt
 
 cp .env.example .env
-# uzupełnij DATABASE_PASSWORD, OBSIDIAN_VAULT_PATH,
-# opcjonalnie ANTHROPIC_API_KEY i/lub GEMINI_API_KEY
+# Fill in DATABASE_PASSWORD, OBSIDIAN_VAULT_PATH,
+# and optionally ANTHROPIC_API_KEY / GEMINI_API_KEY
 
 alembic upgrade head
 uvicorn app.main:app --reload
-```
 
-Backend wystartuje na `localhost:8000`. Dokumentacja API pod `/docs`.
-
-### Frontend
-
-```bash
 cd frontend
 npm install
 npm run dev
-```
 
-### Pierwsze uruchomienie
+First Run
 
-1. Otwórz frontend, wejdź w **Dashboard**, kliknij **"Synchronizuj vault"**
-   — to zaindeksuje wszystkie notatki i wyciągnie fakty z frontmatter,
-   za darmo, bez LLM
-2. (Opcjonalnie) w zakładce **Dokumenty** kliknij **"Wyciągnij fakty
-   (LLM)"** na wybranej notatce, żeby wyciągnąć fakty też z prozy —
-   wymaga klucza API
-3. Sprawdź zakładkę **Konflikty**
+    Open the frontend, go to Dashboard, and click "Sync Vault" — this indexes notes and extracts frontmatter facts for free without an LLM.
 
-## Konfiguracja pod własny vault
+    (Optional) In the Documents tab, click "Extract Facts (LLM)" on a note to parse prose (requires an API key).
 
-LoreGuard nie zakłada z góry angielskiego słownictwa ani sztywnej
-struktury notatek. Cały słownik — jakie tagi oznaczają jaki typ encji,
-jakie nazwy pól frontmatter oznaczają datę/lokalizację/uczestników,
-które predykaty są traktowane jako wzajemnie wykluczające się — jest
-konfigurowalny przez opcjonalny plik `.loreguard/schema.yaml` w Twoim
-vault, z sensownymi domyślnymi wartościami (PL+EN) na start.
+    Check the Conflicts tab.
 
+Customizing for Your Vault
+
+LoreGuard does not enforce English-only vocabularies or rigid note structures. The entire dictionary—which tags map to entity types, which frontmatter fields represent dates/locations, and which predicates conflict—is configurable via an optional .loreguard/schema.yaml file in your vault, complete with sensible defaults (PL+EN) out of the box.
