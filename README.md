@@ -10,7 +10,7 @@ LoreGuard **never edits your notes automatically**. It only reports conflicts—
 ---
 
 ## How It Works
-
+```
 Obsidian Vault 
   ↓
 .md scan & Frontmatter/Wikilink Parser
@@ -22,7 +22,7 @@ Event Data (dates, participants)│
         Deterministic Rules Engine
                     ↓
                 CONFLICTS
-
+```
 Frontmatter facts are parsed automatically on sync. Deeper analysis—extracting facts from prose and semantic cross-document comparison—uses optional LLMs, triggered manually per document or in bulk, as it incurs real API costs.
 
 ---
